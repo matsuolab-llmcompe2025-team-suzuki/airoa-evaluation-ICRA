@@ -63,7 +63,7 @@ Set via `.env` or `export POLICY_MODE=hierarchical`.
 
 | Variable | Default | Description |
 |----------|:-------:|-------------|
-| `POLICY_BACKEND` | `lerobot` | Backend: `openpi` or `lerobot` |
+| `POLICY_BACKEND` | `openpi` | Backend: `openpi` or `lerobot` |
 | `POLICY_MODE` | `e2e` | Inference mode: `e2e` or `hierarchical` |
 | `POLICY_CONFIG_NAME` | — | Train config name (required for openpi) |
 | `POLICY_SERVER_PORT` | `8000` | WebSocket server port |
@@ -82,12 +82,12 @@ Set via `.env` or `export POLICY_MODE=hierarchical`.
 | `server/lerobot_hsr_policy.py` | LeRobot PI05Policy wrapper |
 | `server/hierarchical_hsr_policy.py` | HVLA wrapper (PA Monitor + FM + Retry) |
 | `server/llm_api_client.py` | LLM API client for external Qwen3.5-4B |
-| `pa_decomposition_v2.json` | PA decomposition map (93 SHTs) |
+| `pa_decomposition_v2.json` | PA decomposition map (96 SHTs) |
 | `hierarchical_config_optimized.yaml` | HVLA config (max_steps_short, FM, etc.) |
 
 ## HVLA Features
 
-- **PA Planner**: Rule (93 SHT) → Fuzzy match → LLM API → E2E fallback
+- **PA Planner**: Rule (96 SHT) → Fuzzy match → LLM API → E2E fallback
 - **PA Monitor**: Convergence detection + gripper transition + max_steps adaptive control
 - **Failure Monitor**: State-based RF (AUROC=0.881) → RetryController
 - **PA-R3**: Automatic pronoun resolution in LLM-generated PAs
