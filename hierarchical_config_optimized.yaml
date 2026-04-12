@@ -61,6 +61,9 @@ pa_monitor:
 
 # --- アクション後処理 ---
 postprocessor:
-  gripper_clip: true           # グリッパー値を [0.0, 1.0] にクリッピング (Team 18 分析)
-  gripper_clip_min: 0.0
+  gripper_clip: true           # グリッパー値をクリッピング
+  gripper_clip_min: -1.0       # R4: 0.0 → -1.0 (閉じる信号消失の修正, MSE 40%改善)
   gripper_clip_max: 1.0
+  action_smoothing: true       # EMA アクションスムージング (Jerk -40%, MSE -6.8%)
+  action_smoothing_alpha: 0.3  # EMA 係数 (0.3 = 強い平滑化, 1.0 = なし)
+  action_smoothing_exclude_dims: [5]  # gripper はスムージング除外

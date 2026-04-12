@@ -24,8 +24,6 @@ class ActionPostprocessor(BasePolicy):
 
     Args:
         policy: 内部ポリシー（BasePolicy 互換）
-        gripper_binarize: グリッパー二値化を有効にする
-        gripper_threshold: 二値化閾値（これ以上で開=1.0、未満で閉=0.0）
         gripper_idx: アクション配列中のグリッパーインデックス
         gripper_force_guard: 力覚センサー閾値ガードを有効にする
         gripper_force_limit: 把持力上限 [N]（超過時にグリッパー指令を現在値に固定）
@@ -41,8 +39,6 @@ class ActionPostprocessor(BasePolicy):
         self,
         policy: BasePolicy,
         *,
-        gripper_binarize: bool = True,
-        gripper_threshold: float = 0.5,
         gripper_idx: int = 5,
         gripper_force_guard: bool = False,
         gripper_force_limit: float = 10.0,
@@ -60,8 +56,6 @@ class ActionPostprocessor(BasePolicy):
         ensemble_decay: float = 0.8,
     ):
         self._policy = policy
-        self._gripper_binarize = gripper_binarize
-        self._gripper_threshold = gripper_threshold
         self._gripper_idx = gripper_idx
         self._gripper_clip = gripper_clip
         self._gripper_clip_min = gripper_clip_min
@@ -98,8 +92,6 @@ class ActionPostprocessor(BasePolicy):
         return {
             **inner_meta,
             "postprocessor": {
-                "gripper_binarize": self._gripper_binarize,
-                "gripper_threshold": self._gripper_threshold,
                 "gripper_force_guard": self._gripper_force_guard,
                 "gripper_force_limit": self._gripper_force_limit,
                 "gripper_contact_guard": self._gripper_contact_guard,
@@ -142,10 +134,6 @@ class ActionPostprocessor(BasePolicy):
         # Action Smoothing (EMA, gripper 除外)
         if self._action_smoothing:
             actions = self._smooth_action(actions)
-
-        # グリッパー二値化
-        if self._gripper_binarize:
-            actions = self._binarize_gripper(actions)
 
         # 力覚センサー閾値ガード
         if self._gripper_force_guard:
@@ -221,17 +209,6 @@ class ActionPostprocessor(BasePolicy):
             actions[idx] = np.clip(
                 actions[idx], self._gripper_clip_min, self._gripper_clip_max
             )
-        return actions
-
-    def _binarize_gripper(self, actions: np.ndarray) -> np.ndarray:
-        """グリッパー次元を閾値で二値化"""
-        idx = self._gripper_idx
-        if actions.ndim == 2:
-            actions[:, idx] = np.where(
-                actions[:, idx] >= self._gripper_threshold, 1.0, 0.0
-            )
-        elif actions.ndim == 1:
-            actions[idx] = 1.0 if actions[idx] >= self._gripper_threshold else 0.0
         return actions
 
     def _apply_force_guard(self, actions: np.ndarray, obs: Dict) -> np.ndarray:

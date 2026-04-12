@@ -26,7 +26,7 @@ class TestGripperBinarization:
 
         actions = np.array([[0.1, 0.2, 0.3, 0.4, 0.5, 0.8, 0.1, 0.2]])
         mock = MockPolicy(actions)
-        pp = ActionPostprocessor(mock, gripper_binarize=True, gripper_threshold=0.5)
+        pp = ActionPostprocessor(mock)
         result = pp.infer({})
         assert result["actions"][0, 5] == 1.0
 
@@ -35,7 +35,7 @@ class TestGripperBinarization:
 
         actions = np.array([[0.1, 0.2, 0.3, 0.4, 0.5, 0.2, 0.1, 0.2]])
         mock = MockPolicy(actions)
-        pp = ActionPostprocessor(mock, gripper_binarize=True, gripper_threshold=0.5)
+        pp = ActionPostprocessor(mock)
         result = pp.infer({})
         assert result["actions"][0, 5] == 0.0
 
@@ -44,7 +44,7 @@ class TestGripperBinarization:
 
         actions = np.array([[0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0]])
         mock = MockPolicy(actions)
-        pp = ActionPostprocessor(mock, gripper_binarize=True, gripper_threshold=0.5)
+        pp = ActionPostprocessor(mock)
         result = pp.infer({})
         assert result["actions"][0, 5] == 1.0  # >= threshold → 1.0
 
@@ -62,7 +62,7 @@ class TestGripperBinarization:
 
         actions = np.array([[0.11, 0.22, 0.33, 0.44, 0.55, 0.8, 0.77, 0.88]])
         mock = MockPolicy(actions)
-        pp = ActionPostprocessor(mock, gripper_binarize=True, gripper_threshold=0.5)
+        pp = ActionPostprocessor(mock)
         result = pp.infer({})
         a = result["actions"][0]
         assert abs(a[0] - 0.11) < 1e-6
@@ -143,7 +143,7 @@ class TestCombined:
         a = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.6, 0.0, 0.0])
         mock = MockPolicy(a)
         pp = ActionPostprocessor(
-            mock, gripper_binarize=True, gripper_threshold=0.5,
+            mock,
             temporal_ensemble=True, ensemble_window=3, ensemble_decay=0.8,
         )
         result = pp.infer({})
