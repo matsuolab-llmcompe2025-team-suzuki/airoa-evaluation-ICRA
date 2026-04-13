@@ -4,12 +4,20 @@ set -euo pipefail
 : "${POLICY_CHECKPOINT_DIR:?POLICY_CHECKPOINT_DIR is required}"
 
 # --- チェックポイント前処理 (モデル入替時の互換性を自動確保) ---
+# チェックポイントが read-only マウントの場合があるため、作業コピーを作成
+WORK_CKPT="/workspace/_checkpoint"
+if [[ -d "${WORK_CKPT}" ]]; then
+  rm -rf "${WORK_CKPT}"
+fi
+cp -r "${POLICY_CHECKPOINT_DIR}" "${WORK_CKPT}"
+echo "[entrypoint] Checkpoint copied to ${WORK_CKPT}"
+
 TOKENIZER_LOCAL="/workspace/tokenizer/paligemma-3b-pt-224"
 
 /workspace/.venv/bin/python -c "
 import json, sys, os
 
-ckpt_dir = os.environ['POLICY_CHECKPOINT_DIR']
+ckpt_dir = '${WORK_CKPT}'
 tokenizer_local = '${TOKENIZER_LOCAL}'
 
 # 1. config.json: DAFD フィールドを除去 (LeRobot 互換性)
@@ -42,6 +50,9 @@ if os.path.exists(pp_path) and os.path.isdir(tokenizer_local):
         with open(pp_path, 'w') as f:
             json.dump(pp, f, indent=2)
 " || echo "[entrypoint] WARNING: checkpoint preprocessing failed (non-fatal)"
+
+# 前処理済みの作業コピーを使用
+POLICY_CHECKPOINT_DIR="${WORK_CKPT}"
 
 BACKEND="${POLICY_BACKEND:-openpi}"
 HOST="${POLICY_SERVER_HOST:-0.0.0.0}"
