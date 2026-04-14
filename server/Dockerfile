@@ -29,19 +29,22 @@ RUN GIT_LFS_SKIP_SMUDGE=1 uv sync --frozen --no-dev && \
         torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128 --reinstall && \
     # 推論不要パッケージを削除して image サイズを削減
     # - JAX 本体 + エコシステム: openpi training 用、PyTorch 推論では不使用
-    # - triton: torch.compile 用、compile_model=false なので不要
-    # - rerun/cmake/wandb: 可視化・ビルド・ロギング、推論不要
+    # - rerun/wandb: 可視化・ロギング、推論不要
     # - gcsfs: GCS アクセス、推論不要
     uv pip uninstall --python /workspace/.venv/bin/python \
         jax jaxlib jax-cuda12-pjrt jax-cuda12-plugin jaxtyping \
         flax augmax equinox chex optax orbax-checkpoint \
-        triton \
         rerun-sdk \
-        cmake \
         wandb \
         gcsfs && \
-    # setuptools を lerobot の要求 (>=71) に合わせる
-    uv pip install --python /workspace/.venv/bin/python 'setuptools>=71,<81' && \
+    # 依存関係の不整合を解消
+    # - setuptools: lerobot が >=71 を要求
+    # - fsspec: datasets が <=2025.9.0 を要求
+    # - cmake: lerobot が >=3.29 を要求 (ダミー、推論では不使用)
+    uv pip install --python /workspace/.venv/bin/python \
+        'setuptools>=71,<81' \
+        'fsspec==2025.3.0' \
+        'cmake>=3.29,<4.2' && \
     rm -rf /root/.cache/uv
 
 # NOTE: transformers_replace は transformers 4.53.x 用。
