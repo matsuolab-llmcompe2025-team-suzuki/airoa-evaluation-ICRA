@@ -54,7 +54,7 @@ if os.path.exists(pp_path) and os.path.isdir(tokenizer_local):
 # 前処理済みの作業コピーを使用
 POLICY_CHECKPOINT_DIR="${WORK_CKPT}"
 
-BACKEND="${POLICY_BACKEND:-openpi}"
+BACKEND="${POLICY_BACKEND:-lerobot}"
 HOST="${POLICY_SERVER_HOST:-0.0.0.0}"
 PORT="${POLICY_SERVER_PORT:-8000}"
 
