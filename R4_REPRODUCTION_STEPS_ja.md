@@ -9,9 +9,9 @@
 | フォークリポジトリ | `https://github.com/matsuolab-llmcompe2025-team-suzuki/airoa-evaluation-ICRA` |
 | ブランチ | `feat/lerobot-pi05` |
 | バックエンド | `lerobot`（`.env` で設定済み、手動 export 不要） |
-| モード | `hierarchical`（HVLA: PA 単位推論 + アクション後処理） |
+| モード | `e2e`（`.env` で設定済み、手動 export 不要） |
 | VRAM | ~9 GB |
-| SSD | Docker ~15 GB + チェックポイント ~9 GB = ~24 GB（30 GB 制限内） |
+| SSD | Docker ~20 GB + チェックポイント ~9 GB = ~29 GB（30 GB 制限内） |
 | トークナイザー | コンテナ内蔵 (`/workspace/tokenizer/paligemma-3b-pt-224`) |
 
 ## 前提条件
@@ -35,14 +35,14 @@ git checkout feat/lerobot-pi05
 ```bash
 mkdir -p checkpoints/r4
 huggingface-cli download ICRA-2026-RAMEN/pi05-round4-run52-sft-v5 \
-    --include "checkpoints/020000/pretrained_model/*" \
+    --include "checkpoints/040000/pretrained_model/*" \
     --local-dir checkpoints/r4
 ```
 
 ### 3. コンテナの起動
 
 ```bash
-export POLICY_CHECKPOINT_PATH=$(pwd)/checkpoints/r4/checkpoints/020000/pretrained_model
+export POLICY_CHECKPOINT_PATH=$(pwd)/checkpoints/r4/checkpoints/040000/pretrained_model
 ./RUN-DOCKER-CONTAINER.sh up
 ```
 

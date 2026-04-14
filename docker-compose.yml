@@ -25,7 +25,7 @@ services:
       OPENPI_DATA_HOME: /policy_assets
       HF_HOME: /policy_hf_cache
       # HVLA
-      POLICY_MODE: ${POLICY_MODE:-hierarchical}
+      POLICY_MODE: ${POLICY_MODE:-e2e}
       PA_DECOMPOSITION: /workspace/pa_decomposition.json
       POLICY_CONFIG: /workspace/hierarchical_config.yaml
       FM_MODEL: ${FM_MODEL:-}
