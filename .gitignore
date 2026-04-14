@@ -1,1 +1,16 @@
+# Python
 __pycache__/
+*.pyc
+*.pyo
+
+# 機密ファイル
+.env.local
+.env.*.local
+credentials*
+secrets*
+*.pem
+*.key
+
+# 大容量ファイル
+checkpoints/
+datasets/
