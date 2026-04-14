@@ -27,6 +27,16 @@ RUN GIT_LFS_SKIP_SMUDGE=1 uv sync --frozen --no-dev && \
     uv pip install --python /workspace/.venv/bin/python pytest && \
     uv pip install --python /workspace/.venv/bin/python \
         torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128 --reinstall && \
+    # 推論不要パッケージを削除して image サイズを削減 (~1.7 GB)
+    # - JAX 関連: openpi training 用、PyTorch 推論では不使用
+    # - triton: torch.compile 用、compile_model=false なので不要
+    # - rerun/cmake/wandb: 可視化・ビルド・ロギング、推論不要
+    uv pip uninstall --python /workspace/.venv/bin/python \
+        jax jaxlib jax-cuda12-pjrt jax-cuda12-plugin jaxtyping \
+        triton \
+        rerun-sdk \
+        cmake \
+        wandb && \
     rm -rf /root/.cache/uv
 
 # NOTE: transformers_replace は transformers 4.53.x 用。
