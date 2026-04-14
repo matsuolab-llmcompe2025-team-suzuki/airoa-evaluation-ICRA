@@ -6,31 +6,24 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
 dependencies = [
-    "augmax>=0.3.4",
     "dm-tree>=0.1.8",
     "einops>=0.8.0",
-    "equinox>=0.11.8",
     "flatbuffers>=24.3.25",
-    "flax==0.10.2",
-    "fsspec[gcs]>=2024.6.0",
+    "fsspec>=2024.6.0",
     # "gym-aloha>=0.1.1",  # HSR 推論には不要。MuJoCo ビルドが必要なため除外
     "imageio>=2.36.1",
-    "jax[cuda12]==0.5.3",
-    "jaxtyping==0.2.36",
     "lerobot",
     "ml_collections==1.0.0",
     "numpy>=1.22.4",
     "numpydantic>=1.6.6",
     "opencv-python>=4.10.0.84",
     "policy-client",
-    "orbax-checkpoint==0.11.13",
     "pillow>=11.0.0",
     "sentencepiece>=0.2.0",
     "torch==2.7.1",
     "tqdm-loggable>=0.2",
     "typing-extensions>=4.12.2",
     "tyro>=0.9.5",
-    "wandb>=0.19.1",
     "filelock>=3.16.1",
     "beartype==0.19.0",
     "treescope>=0.1.7",
@@ -38,6 +31,19 @@ dependencies = [
     "rich>=14.0.0",
     "polars>=1.30.0",
     "rospkg>=1.6.1",
+]
+
+[project.optional-dependencies]
+# JAX/学習関連 — 推論では不要、学習時に `pip install .[training]` で追加
+training = [
+    "augmax>=0.3.4",
+    "equinox>=0.11.8",
+    "flax==0.10.2",
+    "fsspec[gcs]>=2024.6.0",
+    "jax[cuda12]==0.5.3",
+    "jaxtyping==0.2.36",
+    "orbax-checkpoint==0.11.13",
+    "wandb>=0.19.1",
 ]
 
 
