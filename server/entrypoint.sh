@@ -25,13 +25,23 @@ config_path = os.path.join(ckpt_dir, 'config.json')
 if os.path.exists(config_path):
     with open(config_path) as f:
         config = json.load(f)
+    modified = False
+    # 1a. compile_model を強制的に False にする (True だと初回推論 300s 超タイムアウト)
+    if config.get('compile_model') is not False:
+        old = config.get('compile_model')
+        config['compile_model'] = False
+        modified = True
+        print(f'[entrypoint] config.json: compile_model {old} -> False')
+    # 1b. DAFD フィールドを除去 (LeRobot 互換性)
     dafd_keys = [k for k in config if 'dafd' in k.lower()]
     if dafd_keys:
         for k in dafd_keys:
             del config[k]
+        modified = True
+        print(f'[entrypoint] config.json: removed DAFD fields: {dafd_keys}')
+    if modified:
         with open(config_path, 'w') as f:
             json.dump(config, f, indent=2)
-        print(f'[entrypoint] config.json: removed DAFD fields: {dafd_keys}')
 
 # 2. policy_preprocessor.json: tokenizer_name をコンテナ内パスに書き換え (オフライン対応)
 pp_path = os.path.join(ckpt_dir, 'policy_preprocessor.json')
