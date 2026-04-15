@@ -32,7 +32,13 @@ if os.path.exists(config_path):
         config['compile_model'] = False
         modified = True
         print(f'[entrypoint] config.json: compile_model {old} -> False')
-    # 1b. DAFD フィールドを除去 (LeRobot 互換性)
+    # 1b. gradient_checkpointing を強制的に False にする (学習用フラグ、推論不要)
+    if config.get('gradient_checkpointing') is not False:
+        old = config.get('gradient_checkpointing')
+        config['gradient_checkpointing'] = False
+        modified = True
+        print(f'[entrypoint] config.json: gradient_checkpointing {old} -> False')
+    # 1c. DAFD フィールドを除去 (LeRobot 互換性)
     dafd_keys = [k for k in config if 'dafd' in k.lower()]
     if dafd_keys:
         for k in dafd_keys:

@@ -17,7 +17,9 @@
 ## Prerequisites
 
 - NVIDIA GPU with 16 GB+ VRAM
-- Docker + NVIDIA Container Toolkit
+- Host RAM: 16 GB+
+- Docker + Docker Compose v2 + NVIDIA Container Toolkit
+- AWS CLI (`pip install awscli`)
 - No HF_TOKEN required (tokenizer is bundled in the container)
 
 ## Reproduction Steps
@@ -33,7 +35,9 @@ git checkout feat/lerobot-pi05
 ### 2. Download the checkpoint
 
 ```bash
-aws s3 sync s3://airoa-icra-team-11/pretrained_model/ checkpoints/r4/
+export AWS_ENDPOINT_URL=https://eabeb2a5516ef53a191452e5714fc16b.r2.cloudflarestorage.com
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
+    s3://airoa-icra-team-11/pretrained_model/ checkpoints/r4/
 ```
 
 ### 3. Start the container

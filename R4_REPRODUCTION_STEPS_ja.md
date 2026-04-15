@@ -17,7 +17,9 @@
 ## 前提条件
 
 - NVIDIA GPU (16 GB+ VRAM)
-- Docker + NVIDIA Container Toolkit
+- ホスト RAM: 16 GB 以上
+- Docker + Docker Compose v2 + NVIDIA Container Toolkit
+- AWS CLI (`pip install awscli`)
 - HF_TOKEN は**不要**（トークナイザーはコンテナに内蔵）
 
 ## 再現手順
@@ -33,7 +35,9 @@ git checkout feat/lerobot-pi05
 ### 2. チェックポイントのダウンロード
 
 ```bash
-aws s3 sync s3://airoa-icra-team-11/pretrained_model/ checkpoints/r4/
+export AWS_ENDPOINT_URL=https://eabeb2a5516ef53a191452e5714fc16b.r2.cloudflarestorage.com
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
+    s3://airoa-icra-team-11/pretrained_model/ checkpoints/r4/
 ```
 
 ### 3. コンテナの起動
