@@ -113,13 +113,22 @@ class LeRobotHSRPolicy(BasePolicy):
 
         batch = self._preprocessor(batch)
         with torch.inference_mode():
-            action = self._policy.select_action(batch)
+            action = self._policy.predict_action_chunk(batch)
+            # predict_action_chunk returns (B, chunk_size, action_dim)
+            # Unpad to actual output dim
+            original_dim = self._postprocessor.steps[0].features["action"].shape[0] \
+                if hasattr(self._postprocessor.steps[0], "features") else action.shape[-1]
+            if action.shape[-1] > original_dim:
+                action = action[..., :original_dim]
+
         result = self._postprocessor({"action": action})
 
         action_out = result["action"].cpu().numpy()
 
-        # Ensure 2D: [action_horizon, action_dim]
-        if action_out.ndim == 1:
+        # (B, chunk_size, action_dim) → (chunk_size, action_dim)
+        if action_out.ndim == 3:
+            action_out = action_out[0]
+        elif action_out.ndim == 1:
             action_out = action_out[np.newaxis, :]
 
         # Pad model output → HSR 11D (append zeros for base_x, base_y, base_t)
