@@ -5,7 +5,7 @@
 | Item | Value |
 |------|-------|
 | Model | π0.5 fine-tuned SFT (run52-sft-v5) |
-| Checkpoint | `ICRA-2026-RAMEN/pi05-round4-run52-sft-v5` |
+| Checkpoint (R2) | `s3://airoa-icra-team-11/pretrained_model/` |
 | Repository | `https://github.com/matsuolab-llmcompe2025-team-suzuki/airoa-evaluation-ICRA` |
 | Branch | `feat/lerobot-pi05` |
 | Backend | `lerobot` (set via `.env`, no manual export needed) |
@@ -33,16 +33,13 @@ git checkout feat/lerobot-pi05
 ### 2. Download the checkpoint
 
 ```bash
-mkdir -p checkpoints/r4
-huggingface-cli download ICRA-2026-RAMEN/pi05-round4-run52-sft-v5 \
-    --include "checkpoints/040000/pretrained_model/*" \
-    --local-dir checkpoints/r4
+aws s3 sync s3://airoa-icra-team-11/pretrained_model/ checkpoints/r4/
 ```
 
 ### 3. Start the container
 
 ```bash
-export POLICY_CHECKPOINT_PATH=$(pwd)/checkpoints/r4/checkpoints/040000/pretrained_model
+export POLICY_CHECKPOINT_PATH=$(pwd)/checkpoints/r4
 ./RUN-DOCKER-CONTAINER.sh up
 ```
 

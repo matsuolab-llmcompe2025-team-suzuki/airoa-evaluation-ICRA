@@ -5,7 +5,7 @@
 | 項目 | 値 |
 |------|-----|
 | モデル | π0.5 ファインチューン SFT (run52-sft-v5) |
-| チェックポイント | `ICRA-2026-RAMEN/pi05-round4-run52-sft-v5` |
+| チェックポイント (R2) | `s3://airoa-icra-team-11/pretrained_model/` |
 | フォークリポジトリ | `https://github.com/matsuolab-llmcompe2025-team-suzuki/airoa-evaluation-ICRA` |
 | ブランチ | `feat/lerobot-pi05` |
 | バックエンド | `lerobot`（`.env` で設定済み、手動 export 不要） |
@@ -33,16 +33,13 @@ git checkout feat/lerobot-pi05
 ### 2. チェックポイントのダウンロード
 
 ```bash
-mkdir -p checkpoints/r4
-huggingface-cli download ICRA-2026-RAMEN/pi05-round4-run52-sft-v5 \
-    --include "checkpoints/040000/pretrained_model/*" \
-    --local-dir checkpoints/r4
+aws s3 sync s3://airoa-icra-team-11/pretrained_model/ checkpoints/r4/
 ```
 
 ### 3. コンテナの起動
 
 ```bash
-export POLICY_CHECKPOINT_PATH=$(pwd)/checkpoints/r4/checkpoints/040000/pretrained_model
+export POLICY_CHECKPOINT_PATH=$(pwd)/checkpoints/r4
 ./RUN-DOCKER-CONTAINER.sh up
 ```
 
