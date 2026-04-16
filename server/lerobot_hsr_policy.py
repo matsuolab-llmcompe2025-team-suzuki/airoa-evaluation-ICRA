@@ -27,7 +27,8 @@ _IMAGE_SIZE = (224, 224)
 _HSR_ACTION_DIM = 11  # 8 joints + 3 base twist
 
 # 32D sparse layout → 11D composite のマッピング
-# 公式 hsr_policy.py _decode_actions_inv の aligned_ids と同一
+# 出典: 公式 hsr_policy.py _decode_actions_inv の aligned_ids
+# 学習側: model/scripts/data/preprocess.py remap_action_11d_to_32d (issue/110-baseline-ckpt-ft)
 _ACTION_32D_TO_11D = [0, 1, 2, 3, 4, 6, 11, 12, 13, 14, 15]
 
 
