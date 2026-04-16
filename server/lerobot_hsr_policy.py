@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 _IMAGE_SIZE = (224, 224)
 _HSR_ACTION_DIM = 11  # 8 joints + 3 base twist
 
+# 32D sparse layout → 11D composite のマッピング
+# 公式 hsr_policy.py _decode_actions_inv の aligned_ids と同一
+_ACTION_32D_TO_11D = [0, 1, 2, 3, 4, 6, 11, 12, 13, 14, 15]
+
 
 class LeRobotHSRPolicy(BasePolicy):
     """LeRobot PI05Policy wrapper for HSR WebSocket serving."""
@@ -131,8 +135,11 @@ class LeRobotHSRPolicy(BasePolicy):
         elif action_out.ndim == 1:
             action_out = action_out[np.newaxis, :]
 
-        # Pad model output → HSR 11D (append zeros for base_x, base_y, base_t)
-        if action_out.shape[-1] < _HSR_ACTION_DIM:
+        # 32D sparse layout → 11D composite (baseline-ft 等の 32D モデル対応)
+        if action_out.shape[-1] > _HSR_ACTION_DIM:
+            action_out = action_out[:, _ACTION_32D_TO_11D]
+        # 11D 未満の場合はゼロパディング (旧 8D モデル対応)
+        elif action_out.shape[-1] < _HSR_ACTION_DIM:
             pad_width = _HSR_ACTION_DIM - action_out.shape[-1]
             action_out = np.pad(action_out, ((0, 0), (0, pad_width)), mode="constant")
 
