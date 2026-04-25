@@ -1356,7 +1356,7 @@ wheels = [
 [[package]]
 name = "lerobot"
 version = "0.5.1"
-source = { git = "https://github.com/matsuolab-llmcompe2025-team-suzuki/lerobot?branch=ramen#c343490c8536b79ca5637408cf5dd35a8addf4a3" }
+source = { git = "https://github.com/matsuolab-llmcompe2025-team-suzuki/lerobot?branch=ramen#7431fb1d02d618ad539e9f2bdfa3eb34d75db4ed" }
 dependencies = [
     { name = "accelerate", marker = "sys_platform == 'linux'" },
     { name = "av", marker = "sys_platform == 'linux'" },
