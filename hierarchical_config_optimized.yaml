@@ -62,9 +62,20 @@ pa_monitor:
 # --- アクション後処理 ---
 postprocessor:
   gripper_clip: true           # グリッパー値をクリッピング
-  gripper_clip_min: -1.0       # R4: 0.0 → -1.0 (E-7: 閉じる信号消失の修正, MSE 40%改善)
-  gripper_clip_max: 1.0
+  gripper_clip_min: -1.0       # 学習分布 (v5 q01=-1.006) を保持、hybrid モード下では数値無視
+  # R5: 1.0 → 1.23 (icra_2026_ramen#145) HSR 物理メカ限界 (1.239 rad = 全開)。
+  # Run64/65 pred q99=+1.26 に対して旧 max=1.0 では close 側 28% を潰していた。
+  gripper_clip_max: 1.23       # was 1.0 → 1.23 (R5 fix, icra_2026_ramen#145)
   gripper_binarize: false      # 明示的に OFF (serve_hsr_policy_ws.py デフォルト False と一致)
+  # R5: hybrid モードの 0.5 境界振動抑制。chunk 境界で pred が 0.5 を跨ぐと
+  # grasp action start/cancel と position 指令が交互に発行され、実機で振動・
+  # 物体落下の原因となる。EMA window=5 decay=0.8 で抑制。
+  temporal_ensemble: true
+  ensemble_window: 5
+  ensemble_decay: 0.8
+  # R5: 運営 grasp action が既に力制御済みのため二重制御回避 (class default 明示化)
+  gripper_force_guard: false
+  gripper_contact_guard: false
   action_smoothing: true       # EMA アクションスムージング (Jerk -40%, MSE -6.8%)
   action_smoothing_alpha: 0.3  # EMA 係数 (0.3 = 強い平滑化, 1.0 = なし)
   action_smoothing_exclude_dims: [5]  # gripper はスムージング除外
