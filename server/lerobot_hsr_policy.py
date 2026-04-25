@@ -49,10 +49,19 @@ class LeRobotHSRPolicy(BasePolicy):
         if moe_config_path.exists():
             logger.info("Detected moe_config.json → loading PI05MoEPolicy")
             from moe.policy import PI05MoEPolicy
-            self._policy = PI05MoEPolicy.from_pretrained(checkpoint_dir)
+            # MoE wraps PI05Policy; pass strict=True for silent-fallback protection (PR #9).
+            try:
+                self._policy = PI05MoEPolicy.from_pretrained(checkpoint_dir, strict=True)
+            except TypeError:
+                # Fallback for MoE classes that don't yet accept the strict kwarg.
+                logger.warning("PI05MoEPolicy.from_pretrained does not accept strict=True; "
+                               "loading without sanity check (silent-fallback risk)")
+                self._policy = PI05MoEPolicy.from_pretrained(checkpoint_dir)
         else:
             from lerobot.policies.pi05.modeling_pi05 import PI05Policy
-            self._policy = PI05Policy.from_pretrained(checkpoint_dir)
+            # strict=True converts PR #9's silent-fallback (random vision_tower init)
+            # into a hard RuntimeError. Without this we risk re-deploying R4's 0% bug.
+            self._policy = PI05Policy.from_pretrained(checkpoint_dir, strict=True)
 
         self._policy.eval()
         self._policy.to(device)
