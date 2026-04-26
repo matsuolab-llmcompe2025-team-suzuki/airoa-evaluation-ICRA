@@ -109,15 +109,16 @@ class LeRobotHSRPolicy(BasePolicy):
         """
         hand_img = self._prepare_image(obs["hand_rgb"])
         head_img = self._prepare_image(obs["head_rgb"])
-        dummy_img = torch.full((3, *_IMAGE_SIZE), -1.0, device=self._device)
 
         prompt = obs.get("prompt", self._default_prompt) or self._default_prompt
 
+        # Issue #168 (icra_2026_ramen): right_wrist_0_rgb / empty_camera_0 を
+        # dummy=-1.0 で送信すると訓練 (LeRobot fork @ramen で missing keys mask=0)
+        # と推論 (mask=1 + 値=-3.0 が vision_tower に流入) の非対称が発生し、
+        # 評価結果が大幅に歪む。LeRobot の missing keys 分岐に委ねる。
         batch = {
             "observation.images.left_wrist_0_rgb": hand_img.unsqueeze(0),
             "observation.images.base_0_rgb": head_img.unsqueeze(0),
-            "observation.images.right_wrist_0_rgb": dummy_img.unsqueeze(0),
-            "observation.images.empty_camera_0": dummy_img.unsqueeze(0),
             "observation.state": torch.tensor(
                 np.asarray(obs["state"], dtype=np.float32),
                 device=self._device,
