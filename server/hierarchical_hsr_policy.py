@@ -247,8 +247,10 @@ class HierarchicalHSRPolicy:
         # PA 完了判定 + 遷移
         self._step_count += 1
         self._state_history.append(state.copy())
-        if len(state) > 5:
-            self._gripper_history.append(float(state[5]))
+        # HSR layout: 8D raw → gripper at dim 5; 32D padded → gripper at dim 6.
+        if len(state) >= 8:
+            gripper_dim = 5 if len(state) <= 8 else 6
+            self._gripper_history.append(float(state[gripper_dim]))
 
         if self._current_pa:
             self._check_transition(state)
