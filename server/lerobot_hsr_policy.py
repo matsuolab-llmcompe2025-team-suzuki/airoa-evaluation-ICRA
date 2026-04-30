@@ -109,15 +109,16 @@ class LeRobotHSRPolicy(BasePolicy):
         """
         hand_img = self._prepare_image(obs["hand_rgb"])
         head_img = self._prepare_image(obs["head_rgb"])
-        dummy_img = torch.full((3, *_IMAGE_SIZE), -1.0, device=self._device)
 
         prompt = obs.get("prompt", self._default_prompt) or self._default_prompt
 
+        # Issue #168 (icra_2026_ramen): right_wrist_0_rgb / empty_camera_0 を
+        # dummy=-1.0 で送信すると訓練 (LeRobot fork @ramen で missing keys mask=0)
+        # と推論 (mask=1 + 値=-3.0 が vision_tower に流入) の非対称が発生し、
+        # 評価結果が大幅に歪む。LeRobot の missing keys 分岐に委ねる。
         batch = {
             "observation.images.left_wrist_0_rgb": hand_img.unsqueeze(0),
             "observation.images.base_0_rgb": head_img.unsqueeze(0),
-            "observation.images.right_wrist_0_rgb": dummy_img.unsqueeze(0),
-            "observation.images.empty_camera_0": dummy_img.unsqueeze(0),
             "observation.state": torch.tensor(
                 np.asarray(obs["state"], dtype=np.float32),
                 device=self._device,
@@ -128,10 +129,10 @@ class LeRobotHSRPolicy(BasePolicy):
         batch = self._preprocessor(batch)
         with torch.inference_mode():
             action = self._policy.predict_action_chunk(batch)
-            # predict_action_chunk returns (B, chunk_size, action_dim)
-            # Unpad to actual output dim
-            original_dim = self._postprocessor.steps[0].features["action"].shape[0] \
-                if hasattr(self._postprocessor.steps[0], "features") else action.shape[-1]
+            # predict_action_chunk returns (B, chunk_size, action_dim).
+            # Unpad to actual output dim. Safely access postprocessor metadata:
+            # `features["action"]` may not exist for every step.
+            original_dim = self._original_action_dim_or(action.shape[-1])
             if action.shape[-1] > original_dim:
                 action = action[..., :original_dim]
 
@@ -139,14 +140,30 @@ class LeRobotHSRPolicy(BasePolicy):
 
         action_out = result["action"].cpu().numpy()
 
-        # (B, chunk_size, action_dim) → (chunk_size, action_dim)
+        # Normalize ndim to (chunk_size, action_dim).
         if action_out.ndim == 3:
+            # (B, chunk_size, action_dim)
             action_out = action_out[0]
         elif action_out.ndim == 1:
+            # (action_dim,) — single step
             action_out = action_out[np.newaxis, :]
+        elif action_out.ndim == 2:
+            # Already (chunk_size, action_dim) — pass through.
+            pass
+        else:
+            raise ValueError(
+                f"Unexpected action ndim={action_out.ndim} shape={action_out.shape}; "
+                "expected 1/2/3."
+            )
 
-        # 32D sparse layout → 11D composite (baseline-ft 等の 32D モデル対応)
+        # 32D sparse layout → 11D composite (baseline-ft 等の 32D モデル対応).
+        # Assert the source dim is exactly 32 to catch unexpected layouts (e.g.
+        # 16D / 24D) before we reindex with stale `_ACTION_32D_TO_11D` indices.
         if action_out.shape[-1] > _HSR_ACTION_DIM:
+            assert action_out.shape[-1] == 32, (
+                f"32D→11D mapping requires action_dim==32, got {action_out.shape[-1]}. "
+                "Did training pipeline change action layout?"
+            )
             action_out = action_out[:, _ACTION_32D_TO_11D]
         # 11D 未満の場合はゼロパディング (旧 8D モデル対応)
         elif action_out.shape[-1] < _HSR_ACTION_DIM:
@@ -154,6 +171,26 @@ class LeRobotHSRPolicy(BasePolicy):
             action_out = np.pad(action_out, ((0, 0), (0, pad_width)), mode="constant")
 
         return {"actions": action_out}
+
+    def _original_action_dim_or(self, default: int) -> int:
+        """Return the postprocessor's expected action dim, falling back safely.
+
+        `self._postprocessor.steps[0].features["action"]` is not guaranteed to
+        exist on every pipeline step (e.g. plain device_processor steps lack
+        `features`); accessing it directly raises KeyError or AttributeError.
+        Walk the steps and return the first valid features.action.shape[0].
+        """
+        for step in self._postprocessor.steps:
+            features = getattr(step, "features", None)
+            if features is None:
+                continue
+            feat = features.get("action") if hasattr(features, "get") else None
+            if feat is None:
+                continue
+            shape = getattr(feat, "shape", None)
+            if shape:
+                return int(shape[0])
+        return int(default)
 
     def reset(self) -> None:
         self._policy.reset()
