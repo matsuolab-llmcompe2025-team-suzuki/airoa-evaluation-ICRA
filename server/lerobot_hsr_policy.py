@@ -25,11 +25,53 @@ logger = logging.getLogger(__name__)
 
 _IMAGE_SIZE = (224, 224)
 _HSR_ACTION_DIM = 11  # 8 joints + 3 base twist
+_HSR_STATE_DIM = 8  # arm(5) + gripper(1) + head(2)
 
 # 32D sparse layout → 11D composite のマッピング
 # 出典: 公式 hsr_policy.py _decode_actions_inv の aligned_ids
 # 学習側: model/scripts/data/preprocess.py remap_action_11d_to_32d (issue/110-baseline-ckpt-ft)
 _ACTION_32D_TO_11D = [0, 1, 2, 3, 4, 6, 11, 12, 13, 14, 15]
+
+
+def _pad_state_8d_to_32d(state: torch.Tensor, target_dim: int) -> torch.Tensor:
+    """HSR 8D state を pi05_base layout に従って target_dim (typically 32) へゼロ pad。
+
+    8D = [arm(5), gripper(1), head(2)]
+    32D layout: arm=0:5, gripper=6, head=11:13, base=13:16, 残り 0
+    eval/offline_evaluation/adapters/pi05_32d_adapter.py:328-339 と同等。
+    """
+    if state.shape[-1] >= target_dim:
+        return state
+    padded = torch.zeros(
+        *state.shape[:-1], target_dim,
+        dtype=state.dtype, device=state.device,
+    )
+    padded[..., 0:5] = state[..., 0:5]    # arm
+    padded[..., 6] = state[..., 5]         # gripper
+    padded[..., 11:13] = state[..., 6:8]   # head
+    return padded
+
+
+def _detect_state_dim(checkpoint_dir: str) -> int:
+    """policy_preprocessor の observation.state stats shape から expected_state_dim を検出。
+
+    eval/offline_evaluation/adapters/pi05_32d_adapter.py:_detect_state_dim と同等。
+    検出失敗時は HSR 8D へフォールバック (旧 ckpt 互換)。
+    """
+    from safetensors import safe_open
+    candidates = list(Path(checkpoint_dir).glob("policy_preprocessor_step_*_normalizer_processor.safetensors"))
+    for sf_path in candidates:
+        try:
+            with safe_open(str(sf_path), framework="pt") as f:
+                keys = list(f.keys())
+                for preferred in ("observation.state.q01", "observation.state.q99",
+                                  "observation.state.mean", "observation.state.min"):
+                    if preferred in keys:
+                        return int(f.get_tensor(preferred).shape[0])
+        except Exception as e:
+            logger.warning("Failed to read %s for state dim detection: %s", sf_path, e)
+    logger.warning("Could not detect expected state dim from preprocessor; falling back to %d", _HSR_STATE_DIM)
+    return _HSR_STATE_DIM
 
 
 class LeRobotHSRPolicy(BasePolicy):
@@ -77,6 +119,12 @@ class LeRobotHSRPolicy(BasePolicy):
             overrides={"device_processor": {"device": device}},
         )
 
+        # state pad target dim: preprocessor の observation.state stats から検出
+        # 32D ckpt (Run60-72 等) は 32、8D ckpt (Run52 系) は 8
+        self._expected_state_dim = _detect_state_dim(checkpoint_dir)
+        logger.info("expected_state_dim=%d (HSR client sends %dD)",
+                    self._expected_state_dim, _HSR_STATE_DIM)
+
         logger.info("PI05Policy loaded successfully")
 
     @property
@@ -116,13 +164,14 @@ class LeRobotHSRPolicy(BasePolicy):
         # dummy=-1.0 で送信すると訓練 (LeRobot fork @ramen で missing keys mask=0)
         # と推論 (mask=1 + 値=-3.0 が vision_tower に流入) の非対称が発生し、
         # 評価結果が大幅に歪む。LeRobot の missing keys 分岐に委ねる。
+        # HSR client sends 8D state; pad to expected_state_dim (32 for run60-72, 8 for run52 系).
+        state = torch.tensor(np.asarray(obs["state"], dtype=np.float32), device=self._device)
+        state = _pad_state_8d_to_32d(state, self._expected_state_dim)
+
         batch = {
             "observation.images.left_wrist_0_rgb": hand_img.unsqueeze(0),
             "observation.images.base_0_rgb": head_img.unsqueeze(0),
-            "observation.state": torch.tensor(
-                np.asarray(obs["state"], dtype=np.float32),
-                device=self._device,
-            ).unsqueeze(0),
+            "observation.state": state.unsqueeze(0),
             "task": prompt,
         }
 
