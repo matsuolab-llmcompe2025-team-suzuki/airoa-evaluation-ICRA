@@ -34,6 +34,8 @@
 | Action postprocessor | 簡易 EMA (α=0.3) + clip [-1.0, 1.23] | **Issue #197 修正一式** (下記表参照) |
 | Client EMA | `action_smoothing=ema, ema_alpha=0.2` (二重 EMA) | **`action_smoothing=none`** (単独 server EMA、 5x 応答改善) |
 | **VRAM** | ~9 GB | **~9.7 GB** (bf16 量子化、 fp32 16.5 GB → 9.7 GB) |
+| **CPU RAM peak** | ~30 GB (PI05Policy.from_pretrained の二重持ち) | **~9 GB** (PR #12 新ルート `LEROBOT_LOW_CPU_MEM=1` default、 -78%) |
+| **起動時間** | ~111 秒 | **~6 秒** (PR #12 新ルート、 -95%) |
 
 ### Issue #197 (PR #9) で導入された Action postprocessor 設定
 
@@ -51,7 +53,8 @@
 ## 前提条件
 
 - NVIDIA GPU (**16 GB VRAM 以上**で動作。 bf16 量子化により ~9.7 GB 使用)
-- ホスト RAM: 16 GB 以上
+- ホスト RAM: **12 GB 以上** (新ルート `LEROBOT_LOW_CPU_MEM=1` default で peak ~9 GB)
+  - 旧ルート (`LEROBOT_LOW_CPU_MEM=0`) は CPU peak ~40 GB 必要、 24 GB 環境では OOM
 - Docker (>= 20.10) + Docker Compose v2 + NVIDIA Container Toolkit
 - AWS CLI (`pip install awscli`)
 - ホスト SSD 空き: 20 GB 以上 (Docker image ~7 GB + ckpt ~7.7 GiB + 作業領域)
@@ -124,6 +127,7 @@ INFO:websockets.server:server listening on 0.0.0.0:8000                      ←
 - `RuntimeError: ... Missing key(s) in state_dict` → silent fallback 防止が効いている。 transformers が 5.7.0 か確認
 - `RuntimeError: tensor a (8) ... b (32)` → state pad が効いていない。 `feat/lerobot-pi05-r5` ブランチを使っているか `git log -1` で確認
 - `RuntimeError: CUDA out of memory` → bf16 化が効いていない。 `cat checkpoints/r5/config.json | grep dtype` で `"bfloat16"` を確認
+- ホストプロセスが OOM Killed (CPU RAM 24 GB 環境等) → 新ルート (`LEROBOT_LOW_CPU_MEM=1` default) が無効化されている疑い。 `.env` で明示的に `=0` を設定していないか確認
 
 ### 5. HSR クライアントコンテナに接続
 

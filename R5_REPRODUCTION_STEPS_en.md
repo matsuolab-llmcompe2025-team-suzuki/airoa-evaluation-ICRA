@@ -34,6 +34,8 @@
 | Action postprocessor | basic EMA (α=0.3) + clip [-1.0, 1.23] | **Issue #197 fix suite** (see table below) |
 | Client EMA | `action_smoothing=ema, ema_alpha=0.2` (double-EMA) | **`action_smoothing=none`** (server-only EMA, 5x faster response) |
 | **VRAM** | ~9 GB | **~9.7 GB** (bf16: fp32 16.5 GB → 9.7 GB) |
+| **CPU RAM peak** | ~30 GB (PI05Policy.from_pretrained double-buffering) | **~9 GB** (PR #12 new path `LEROBOT_LOW_CPU_MEM=1` default, -78%) |
+| **Startup time** | ~111 s | **~6 s** (PR #12 new path, -95%) |
 
 ### Action postprocessor settings introduced by Issue #197 (PR #9)
 
@@ -51,7 +53,8 @@
 ## Prerequisites
 
 - NVIDIA GPU (**16 GB+ VRAM**; uses ~9.7 GB after bf16 quantization)
-- Host RAM: 16 GB+
+- Host RAM: **12 GB+** (new path `LEROBOT_LOW_CPU_MEM=1` default has peak ~9 GB)
+  - Old path (`LEROBOT_LOW_CPU_MEM=0`) requires CPU peak ~40 GB; OOM on 24 GB hosts
 - Docker (>= 20.10) + Docker Compose v2 + NVIDIA Container Toolkit
 - AWS CLI (`pip install awscli`)
 - Host SSD free space: 20 GB+ (Docker image ~7 GB + ckpt ~7.7 GiB + working space)
@@ -124,6 +127,7 @@ INFO:websockets.server:server listening on 0.0.0.0:8000                      ←
 - `RuntimeError: ... Missing key(s) in state_dict` → silent-fallback prevention is working. Confirm transformers is 5.7.0
 - `RuntimeError: tensor a (8) ... b (32)` → state pad is not active. Confirm you are on `feat/lerobot-pi05-r5` branch (`git log -1`)
 - `RuntimeError: CUDA out of memory` → bf16 not active. Verify `cat checkpoints/r5/config.json | grep dtype` shows `"bfloat16"`
+- Host process OOM-killed (e.g. 24 GB CPU RAM environment) → new path (`LEROBOT_LOW_CPU_MEM=1` default) likely disabled. Check that `.env` does not set `=0` explicitly
 
 ### 5. Enter the HSR client container
 
