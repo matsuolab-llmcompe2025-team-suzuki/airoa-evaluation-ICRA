@@ -128,6 +128,7 @@ INFO:websockets.server:server listening on 0.0.0.0:8000                      ←
 - `RuntimeError: tensor a (8) ... b (32)` → state pad が効いていない。 `feat/lerobot-pi05-r5` ブランチを使っているか `git log -1` で確認
 - `RuntimeError: CUDA out of memory` → bf16 化が効いていない。 `cat checkpoints/r5/config.json | grep dtype` で `"bfloat16"` を確認
 - ホストプロセスが OOM Killed (CPU RAM 24 GB 環境等) → 新ルート (`LEROBOT_LOW_CPU_MEM=1` default) が無効化されている疑い。 `.env` で明示的に `=0` を設定していないか確認
+- `Policy config not found: /workspace/hierarchical_config.yaml (using defaults)` → ActionPostprocessor wrap が **無効** で起動している (Issue #197 の safety guard 全て無効)。 `docker-compose.yml` の bind-mount が効いているか、 host 側に `hierarchical_config_optimized.yaml` が存在するか確認 (リポジトリ ルートに同梱済み)
 
 ### 5. HSR クライアントコンテナに接続
 
