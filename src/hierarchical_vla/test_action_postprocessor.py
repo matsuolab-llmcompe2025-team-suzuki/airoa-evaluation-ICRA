@@ -26,7 +26,7 @@ class TestGripperBinarization:
 
         actions = np.array([[0.1, 0.2, 0.3, 0.4, 0.5, 0.8, 0.1, 0.2]])
         mock = MockPolicy(actions)
-        pp = ActionPostprocessor(mock)
+        pp = ActionPostprocessor(mock, gripper_binarize=True, gripper_threshold=0.5)
         result = pp.infer({})
         assert result["actions"][0, 5] == 1.0
 
@@ -35,7 +35,7 @@ class TestGripperBinarization:
 
         actions = np.array([[0.1, 0.2, 0.3, 0.4, 0.5, 0.2, 0.1, 0.2]])
         mock = MockPolicy(actions)
-        pp = ActionPostprocessor(mock)
+        pp = ActionPostprocessor(mock, gripper_binarize=True, gripper_threshold=0.5)
         result = pp.infer({})
         assert result["actions"][0, 5] == 0.0
 
@@ -44,7 +44,7 @@ class TestGripperBinarization:
 
         actions = np.array([[0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0]])
         mock = MockPolicy(actions)
-        pp = ActionPostprocessor(mock)
+        pp = ActionPostprocessor(mock, gripper_binarize=True, gripper_threshold=0.5)
         result = pp.infer({})
         assert result["actions"][0, 5] == 1.0  # >= threshold → 1.0
 
@@ -62,7 +62,7 @@ class TestGripperBinarization:
 
         actions = np.array([[0.11, 0.22, 0.33, 0.44, 0.55, 0.8, 0.77, 0.88]])
         mock = MockPolicy(actions)
-        pp = ActionPostprocessor(mock)
+        pp = ActionPostprocessor(mock, gripper_binarize=True, gripper_threshold=0.5)
         result = pp.infer({})
         a = result["actions"][0]
         assert abs(a[0] - 0.11) < 1e-6
@@ -143,7 +143,7 @@ class TestCombined:
         a = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.6, 0.0, 0.0])
         mock = MockPolicy(a)
         pp = ActionPostprocessor(
-            mock,
+            mock, gripper_binarize=True, gripper_threshold=0.5,
             temporal_ensemble=True, ensemble_window=3, ensemble_decay=0.8,
         )
         result = pp.infer({})
@@ -370,7 +370,38 @@ class TestForceGuard:
     """力覚センサー閾値ガードのテスト"""
 
     def test_force_guard_blocks_closing_when_force_exceeded(self):
-        """力の上限超過時、グリッパーをこれ以上閉じない"""
+        """力の上限超過時、グリッパーをこれ以上閉じない
+
+        composite_11d 規約: hand_motor 大=open(1.0), 小=close(0.0)
+        閉じ方向 = 値が減少する指令 (例: 0.7 → 0.3)
+        """
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.1, 0.2])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            gripper_force_guard=True, gripper_force_limit=10.0,
+        )
+
+        # 1st step: 力が低い → グリッパー 0.7 がそのまま通る
+        obs1 = {"wrist_wrench": np.array([1.0, 1.0, 1.0, 0, 0, 0])}
+        result1 = pp.infer(obs1)
+        assert abs(result1["actions"][5] - 0.7) < 1e-6
+
+        # 2nd step: 力が上限超過 + グリッパーを閉じようとする（0.7 → 0.3、 値が減少）
+        actions2 = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.3, 0.1, 0.2])
+        pp._policy = MockPolicy(actions2)
+        obs2 = {"wrist_wrench": np.array([8.0, 5.0, 5.0, 0, 0, 0])}  # norm ≈ 10.7
+        result2 = pp.infer(obs2)
+        # 閉じる方向はブロックされ、前回値 0.7 に制限される
+        assert abs(result2["actions"][5] - 0.7) < 1e-6
+
+    def test_force_guard_allows_opening_when_force_exceeded(self):
+        """力の上限超過でも、開く方向は許可する
+
+        composite_11d: 開く方向 = 値が増加する指令 (例: 0.3 → 0.7)
+        """
         from hierarchical_vla.action_postprocessor import ActionPostprocessor
 
         actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.3, 0.1, 0.2])
@@ -380,40 +411,16 @@ class TestForceGuard:
             gripper_force_guard=True, gripper_force_limit=10.0,
         )
 
-        # 1st step: 力が低い → グリッパー 0.3 がそのまま通る
-        obs1 = {"wrist_wrench": np.array([1.0, 1.0, 1.0, 0, 0, 0])}
-        result1 = pp.infer(obs1)
-        assert abs(result1["actions"][5] - 0.3) < 1e-6
-
-        # 2nd step: 力が上限超過 + グリッパーをさらに閉じようとする（0.3 → 0.5）
-        actions2 = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.5, 0.1, 0.2])
-        pp._policy = MockPolicy(actions2)
-        obs2 = {"wrist_wrench": np.array([8.0, 5.0, 5.0, 0, 0, 0])}  # norm ≈ 10.7
-        result2 = pp.infer(obs2)
-        # 閉じる方向はブロックされ、前回値 0.3 に制限される
-        assert abs(result2["actions"][5] - 0.3) < 1e-6
-
-    def test_force_guard_allows_opening_when_force_exceeded(self):
-        """力の上限超過でも、開く方向は許可する"""
-        from hierarchical_vla.action_postprocessor import ActionPostprocessor
-
-        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.5, 0.1, 0.2])
-        mock = MockPolicy(actions)
-        pp = ActionPostprocessor(
-            mock, gripper_binarize=False,
-            gripper_force_guard=True, gripper_force_limit=10.0,
-        )
-
-        # 1st step: グリッパー 0.5
+        # 1st step: グリッパー 0.3
         obs1 = {"wrist_wrench": np.array([1.0, 1.0, 1.0, 0, 0, 0])}
         pp.infer(obs1)
 
-        # 2nd step: 力超過だが、グリッパーを開く方向（0.5 → 0.2）→ 許可
-        actions2 = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.2, 0.1, 0.2])
+        # 2nd step: 力超過だが、グリッパーを開く方向（0.3 → 0.7、 値が増加）→ 許可
+        actions2 = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.1, 0.2])
         pp._policy = MockPolicy(actions2)
         obs2 = {"wrist_wrench": np.array([8.0, 5.0, 5.0, 0, 0, 0])}
         result2 = pp.infer(obs2)
-        assert abs(result2["actions"][5] - 0.2) < 1e-6
+        assert abs(result2["actions"][5] - 0.7) < 1e-6
 
     def test_force_guard_no_wrench_data(self):
         """wrench データがない場合はスキップ（フォールバック安全）"""
@@ -429,10 +436,10 @@ class TestForceGuard:
         assert abs(result["actions"][5] - 0.8) < 1e-6
 
     def test_force_guard_below_limit(self):
-        """力が上限以下ならグリッパー指令はそのまま通る"""
+        """力が上限以下ならグリッパー指令はそのまま通る (閉じ方向も含む)"""
         from hierarchical_vla.action_postprocessor import ActionPostprocessor
 
-        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.3, 0.1, 0.2])
+        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.1, 0.2])
         mock = MockPolicy(actions)
         pp = ActionPostprocessor(
             mock, gripper_binarize=False,
@@ -442,12 +449,12 @@ class TestForceGuard:
         obs1 = {"wrist_wrench": np.array([1.0, 1.0, 1.0, 0, 0, 0])}
         pp.infer(obs1)
 
-        # 2nd step: 力は上限以下 → グリッパー閉じ方向も許可
-        actions2 = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.8, 0.1, 0.2])
+        # 2nd step: 力は上限以下 → 閉じ方向 (0.7 → 0.2) でも許可
+        actions2 = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.2, 0.1, 0.2])
         pp._policy = MockPolicy(actions2)
         obs2 = {"wrist_wrench": np.array([2.0, 2.0, 2.0, 0, 0, 0])}
         result2 = pp.infer(obs2)
-        assert abs(result2["actions"][5] - 0.8) < 1e-6
+        assert abs(result2["actions"][5] - 0.2) < 1e-6
 
     def test_force_guard_reset_clears_last_value(self):
         """reset() で last_gripper_value がクリアされる"""
@@ -479,79 +486,86 @@ class TestContactGuard:
         )
 
     def test_contact_blocks_closing_after_stall(self):
-        """閉じ指令中に位置が動かない場合、patience ステップ後にブロック"""
+        """閉じ指令中に位置が動かない場合、patience ステップ後にブロック
+
+        composite_11d 規約: cmd 0.2 < state 0.7 → 閉じ方向 (cmd は state より小値=閉に向かう)
+        """
         from hierarchical_vla.action_postprocessor import ActionPostprocessor
 
-        # 閉じ指令 0.8 を出し続ける（state[5] は 0.3 で動かない）
-        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.8, 0.1, 0.2])
+        # 閉じ指令 cmd=0.2 を出し続ける（state=0.7 で動かない=接触）
+        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.2, 0.1, 0.2])
         pp = self._make_pp(actions, patience=3)
 
-        obs = {"state": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.3, 0.1, 0.2])}
+        obs = {"state": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.1, 0.2])}
         # step 1: 初期化（_last_gripper_state セット、比較対象なし）
         pp.infer(obs)
         # step 2-3: stall count 上昇（1, 2）、まだブロックされない
         result2 = pp.infer(obs)
-        assert abs(result2["actions"][5] - 0.8) < 1e-6
+        assert abs(result2["actions"][5] - 0.2) < 1e-6
         result3 = pp.infer(obs)
-        assert abs(result3["actions"][5] - 0.8) < 1e-6
+        assert abs(result3["actions"][5] - 0.2) < 1e-6
 
-        # step 4: patience=3 到達 → 接触検知、実位置に固定
+        # step 4: patience=3 到達 → 接触検知、実位置 0.7 に固定
         result4 = pp.infer(obs)
-        assert abs(result4["actions"][5] - 0.3) < 1e-6
+        assert abs(result4["actions"][5] - 0.7) < 1e-6
 
-        # step 5: 閉じ方向は引き続きブロック
+        # step 5: 閉じ方向は引き続きブロック (cmd=0.2 が来ても 0.7 以上に維持)
         result5 = pp.infer(obs)
-        assert result5["actions"][5] <= 0.3 + 1e-6
+        assert result5["actions"][5] >= 0.7 - 1e-6
 
     def test_contact_allows_opening(self):
-        """接触検知後も開く方向は許可"""
+        """接触検知後も開く方向は許可
+
+        composite_11d 規約: 開く方向 = cmd > last_gripper_value (値が増加)
+        """
         from hierarchical_vla.action_postprocessor import ActionPostprocessor
 
-        actions_close = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.8, 0.1, 0.2])
+        actions_close = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.2, 0.1, 0.2])
         pp = self._make_pp(actions_close, patience=2)
 
-        obs = {"state": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.3, 0.1, 0.2])}
+        obs = {"state": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.1, 0.2])}
         pp.infer(obs)   # step 1: 初期化
         pp.infer(obs)   # step 2: stall=1
         pp.infer(obs)   # step 3: stall=2 → patience=2 到達、接触検知
 
-        # 開く方向の指令（0.1 < 前回値）→ 許可 & 接触解除
-        actions_open = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.1, 0.1, 0.2])
+        # 開く方向の指令（cmd=0.9 > 前回値=0.7）→ 許可 & 接触解除
+        actions_open = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.9, 0.1, 0.2])
         pp._policy = MockPolicy(actions_open)
         result = pp.infer(obs)
-        assert abs(result["actions"][5] - 0.1) < 1e-6
+        assert abs(result["actions"][5] - 0.9) < 1e-6
 
     def test_contact_no_state_data(self):
         """state データがない場合はスキップ"""
-        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.8, 0.1, 0.2])
+        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.2, 0.1, 0.2])
         pp = self._make_pp(actions, patience=2)
         result = pp.infer({})
-        assert abs(result["actions"][5] - 0.8) < 1e-6
+        assert abs(result["actions"][5] - 0.2) < 1e-6
 
     def test_contact_not_triggered_when_moving(self):
-        """位置が動いていれば接触判定されない"""
+        """位置が動いていれば接触判定されない (close 中に state 減少 = 正常閉動作)"""
         from hierarchical_vla.action_postprocessor import ActionPostprocessor
 
-        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.8, 0.1, 0.2])
+        # cmd=0.2 (closing), state は 0.7 → 0.5 → 0.3 と「閉じている」 = stall でない
+        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.2, 0.1, 0.2])
         pp = self._make_pp(actions, patience=2, tolerance=0.005)
 
-        # 位置が毎ステップ動く
-        obs1 = {"state": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.30, 0.1, 0.2])}
-        obs2 = {"state": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.35, 0.1, 0.2])}
-        obs3 = {"state": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.40, 0.1, 0.2])}
+        # 位置が毎ステップ動く (close 方向に減少)
+        obs1 = {"state": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.70, 0.1, 0.2])}
+        obs2 = {"state": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.50, 0.1, 0.2])}
+        obs3 = {"state": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.30, 0.1, 0.2])}
 
         pp.infer(obs1)
         pp.infer(obs2)
         result = pp.infer(obs3)
         # 位置が動いているのでブロックされない
-        assert abs(result["actions"][5] - 0.8) < 1e-6
+        assert abs(result["actions"][5] - 0.2) < 1e-6
 
     def test_contact_reset_clears_state(self):
         """reset() で接触状態がクリアされる"""
-        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.8, 0.1, 0.2])
+        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.2, 0.1, 0.2])
         pp = self._make_pp(actions, patience=2)
 
-        obs = {"state": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.3, 0.1, 0.2])}
+        obs = {"state": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.1, 0.2])}
         pp.infer(obs)   # step 1: 初期化
         pp.infer(obs)   # step 2: stall=1
         pp.infer(obs)   # step 3: stall=2 → 接触検知
@@ -561,6 +575,309 @@ class TestContactGuard:
         assert not pp._contact_detected
         assert pp._gripper_stall_count == 0
         assert pp._last_gripper_state is None
+
+
+class TestBaseDeadband:
+    """Issue #197 B6: base deadband のテスト"""
+
+    def test_base_deadband_zeroes_small_values(self):
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        # composite_11d: dim 8=base_x, 9=base_y, 10=base_theta
+        actions = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.8, 0.0, 0.0, 0.005, 0.003, 0.008])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            base_deadband=True, base_deadband_threshold=0.01,
+        )
+        result = pp.infer({})
+        a = result["actions"]
+        # base 系の |val| < 0.01 は 0 になる
+        assert a[8] == 0.0
+        assert a[9] == 0.0
+        assert a[10] == 0.0
+        # arm/gripper は影響なし
+        assert abs(a[0] - 0.1) < 1e-6
+        assert abs(a[5] - 0.8) < 1e-6
+
+    def test_base_deadband_passes_large_values(self):
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        # |val| >= threshold は通過
+        actions = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.05, -0.03, 0.02])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            base_deadband=True, base_deadband_threshold=0.01,
+        )
+        result = pp.infer({})
+        a = result["actions"]
+        assert abs(a[8] - 0.05) < 1e-6
+        assert abs(a[9] - (-0.03)) < 1e-6
+        assert abs(a[10] - 0.02) < 1e-6
+
+    def test_base_deadband_disabled_by_default(self):
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        actions = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.005, 0.003, 0.008])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(mock, gripper_binarize=False)  # base_deadband=False default
+        result = pp.infer({})
+        a = result["actions"]
+        # 何も変化しない
+        assert abs(a[8] - 0.005) < 1e-6
+        assert abs(a[10] - 0.008) < 1e-6
+
+
+class TestGripperClosingRateCap:
+    """Issue #197 B1': gripper closing rate cap のテスト"""
+
+    def test_closing_rate_cap_limits_close_speed(self):
+        """閉じ方向 (cmd < prev) で変化が cap を超えると制限される
+
+        composite_11d: 大=open, 小=close。 cmd 1.0 → 0.5 は close 方向の変化量 0.5。
+        cap=0.15 なら 1.0 → 0.85 に制限。
+        """
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        actions1 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+        mock = MockPolicy(actions1)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            gripper_closing_rate_cap=True, gripper_closing_rate_max=0.15,
+        )
+        # step 1: cmd=1.0 (last_cmd 未設定なのでそのまま)
+        r1 = pp.infer({})
+        assert abs(r1["actions"][5] - 1.0) < 1e-6
+
+        # step 2: cmd=0.5 (close 方向、 delta=-0.5、 cap=0.15 で制限)
+        actions2 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0])
+        pp._policy = MockPolicy(actions2)
+        r2 = pp.infer({})
+        assert abs(r2["actions"][5] - 0.85) < 1e-6  # 1.0 - 0.15
+
+    def test_closing_rate_cap_does_not_limit_opening(self):
+        """開く方向 (cmd > prev) は cap しない (release は速い方が良い)"""
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        actions1 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        mock = MockPolicy(actions1)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            gripper_closing_rate_cap=True, gripper_closing_rate_max=0.15,
+        )
+        pp.infer({})  # step 1: cmd=0.0
+
+        # step 2: cmd=1.0 (open 方向、 delta=+1.0、 cap しない)
+        actions2 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+        pp._policy = MockPolicy(actions2)
+        r2 = pp.infer({})
+        assert abs(r2["actions"][5] - 1.0) < 1e-6
+
+    def test_closing_rate_cap_small_close_passes(self):
+        """変化量 <= cap なら制限なし"""
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        actions1 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+        mock = MockPolicy(actions1)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            gripper_closing_rate_cap=True, gripper_closing_rate_max=0.15,
+        )
+        pp.infer({})
+
+        # close 方向 0.10 → cap 0.15 以下なのでそのまま通る
+        actions2 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.9, 0.0, 0.0])
+        pp._policy = MockPolicy(actions2)
+        r2 = pp.infer({})
+        assert abs(r2["actions"][5] - 0.9) < 1e-6
+
+    def test_closing_rate_cap_reset_on_pa_switch(self):
+        """reset_pa() で last_gripper_cmd がクリアされる"""
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        actions = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            gripper_closing_rate_cap=True, gripper_closing_rate_max=0.15,
+        )
+        pp.infer({})
+        assert pp._last_gripper_cmd is not None
+
+        pp.reset_pa()
+        assert pp._last_gripper_cmd is None
+
+
+class TestPromptValidation:
+    """Issue #197 B4: prompt validation logging のテスト"""
+
+    def test_prompt_validation_logs_normal_prompt(self, caplog):
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+        import logging
+
+        actions = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False, prompt_validation=True,
+        )
+        with caplog.at_level(logging.INFO):
+            pp.infer({"task": "Pick up the coffee bottle"})
+        assert any("prompt validation" in rec.message for rec in caplog.records)
+
+    def test_prompt_validation_warns_on_empty(self, caplog):
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+        import logging
+
+        actions = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(mock, gripper_binarize=False, prompt_validation=True)
+        with caplog.at_level(logging.WARNING):
+            pp.infer({"task": ""})
+        assert any("空 prompt" in rec.message for rec in caplog.records)
+
+    def test_prompt_validation_warns_on_non_ascii(self, caplog):
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+        import logging
+
+        actions = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(mock, gripper_binarize=False, prompt_validation=True)
+        with caplog.at_level(logging.WARNING):
+            pp.infer({"task": "コーヒーボトルを取る"})
+        assert any("非 ASCII" in rec.message for rec in caplog.records)
+
+    def test_prompt_validation_disabled_by_default(self, caplog):
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+        import logging
+
+        actions = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(mock, gripper_binarize=False)  # prompt_validation=False
+        with caplog.at_level(logging.INFO):
+            pp.infer({"task": "Pick up the coffee"})
+        assert not any("prompt validation" in rec.message for rec in caplog.records)
+
+
+class TestActionClip:
+    """Issue #197: action_clip (任意 dim 別 clip、 物理 safety guard) のテスト"""
+
+    def test_action_clip_base_theta_outlier_clipped(self):
+        """base_theta (dim 10) の物理限界超過 outlier が clip される
+
+        訓練データに base_theta=1.034 rad/step outlier 確認、 clip ±0.32 で抑制
+        """
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        # 11D composite: dim 10 = base_theta
+        actions = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.1, 0.0, 1.034])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            action_clip=True,
+            action_clip_ranges={10: [-0.32, 0.32]},
+        )
+        result = pp.infer({})
+        a = result["actions"]
+        # base_theta 1.034 → 0.32 に clip
+        assert abs(a[10] - 0.32) < 1e-6
+        # 他 dim は影響なし
+        assert abs(a[5] - 0.5) < 1e-6
+        assert abs(a[8] - 0.1) < 1e-6
+
+    def test_action_clip_negative_outlier(self):
+        """負の outlier も clip される"""
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        actions = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, -0.85])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            action_clip=True,
+            action_clip_ranges={10: [-0.32, 0.32]},
+        )
+        result = pp.infer({})
+        assert abs(result["actions"][10] - (-0.32)) < 1e-6
+
+    def test_action_clip_within_range_passes(self):
+        """clip 範囲内の値は変更されない"""
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        actions = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.15])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            action_clip=True,
+            action_clip_ranges={10: [-0.32, 0.32]},
+        )
+        result = pp.infer({})
+        assert abs(result["actions"][10] - 0.15) < 1e-6
+
+    def test_action_clip_multiple_dims(self):
+        """複数 dim の同時 clip"""
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        actions = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.5, -0.4, 1.0])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            action_clip=True,
+            action_clip_ranges={
+                8: [-0.30, 0.30],   # base_x
+                9: [-0.30, 0.30],   # base_y
+                10: [-0.32, 0.32],  # base_theta
+            },
+        )
+        result = pp.infer({})
+        a = result["actions"]
+        assert abs(a[8] - 0.30) < 1e-6   # 0.5 → 0.30
+        assert abs(a[9] - (-0.30)) < 1e-6  # -0.4 → -0.30
+        assert abs(a[10] - 0.32) < 1e-6   # 1.0 → 0.32
+
+    def test_action_clip_disabled_by_default(self):
+        """disabled では何も clip されない"""
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        actions = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 1.5])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(mock, gripper_binarize=False)
+        result = pp.infer({})
+        assert abs(result["actions"][10] - 1.5) < 1e-6
+
+    def test_action_clip_2d_action_chunk(self):
+        """2D action chunk でも全 step clip される"""
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        # (2, 11) chunk
+        actions = np.array([
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, -0.8],
+        ])
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            action_clip=True,
+            action_clip_ranges={10: [-0.32, 0.32]},
+        )
+        result = pp.infer({})
+        a = result["actions"]
+        assert abs(a[0, 10] - 0.32) < 1e-6
+        assert abs(a[1, 10] - (-0.32)) < 1e-6
+
+    def test_action_clip_metadata(self):
+        """metadata に action_clip / action_clip_ranges が含まれる"""
+        from hierarchical_vla.action_postprocessor import ActionPostprocessor
+
+        actions = np.zeros(11)
+        mock = MockPolicy(actions)
+        pp = ActionPostprocessor(
+            mock, gripper_binarize=False,
+            action_clip=True,
+            action_clip_ranges={10: [-0.32, 0.32]},
+        )
+        meta = pp.metadata["postprocessor"]
+        assert meta["action_clip"] is True
+        assert meta["action_clip_ranges"] == {10: [-0.32, 0.32]}
 
 
 if __name__ == "__main__":

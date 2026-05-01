@@ -140,6 +140,11 @@ class HierarchicalVLAPolicy(BasePolicy):
         self._gripper_history: list[float] = []  # グリッパー遷移検知用
         self._done_votes: list[bool] = []  # IM-2: 確認ウィンドウ用
 
+        # I-5: SHT 完了バッファ
+        self._sht_completed = False
+        self._sht_completion_steps = 0
+        self._sht_completion_buffer = cfg.get("sht_completion_buffer", 5)  # 完了後の停止ステップ数
+
         # 外部の ActionPostprocessor への参照（PA 切替時にバッファリセット用）
         self._postprocessor = None
 
@@ -169,12 +174,28 @@ class HierarchicalVLAPolicy(BasePolicy):
             self._pa_queue = pa_list
             self._advance_pa()
             self._total_steps = 0
+            self._sht_completed = False  # I-5: リセット
+            self._sht_completion_steps = 0
             logger.info(
                 "新しい SHT: %s → %d PA: %s",
                 sht_prompt[:60],
                 len(self._pa_queue) + 1,  # current_pa 含む
                 [self._current_pa] + self._pa_queue,
             )
+
+        # I-5: SHT 完了バッファ — 全 PA 完了後はゼロ action を返す
+        if self._sht_completed:
+            self._sht_completion_steps += 1
+            if self._sht_completion_steps <= self._sht_completion_buffer:
+                logger.debug("SHT 完了バッファ: %d/%d", self._sht_completion_steps, self._sht_completion_buffer)
+            # ゼロ action + 完了フラグを返す
+            result = self._vla.infer({**obs, "prompt": self._current_pa or sht_prompt})
+            if "actions" in result:
+                result["actions"] = np.zeros_like(result["actions"])
+            result["sht_done"] = True
+            self._step_count += 1
+            self._total_steps += 1
+            return result
 
         # PA 完了判定
         if self._current_pa and self._is_pa_done(obs):
@@ -188,7 +209,10 @@ class HierarchicalVLAPolicy(BasePolicy):
                     self._step_count,
                 )
             else:
-                logger.debug("全 PA 完了、最後の PA を継続")
+                # 全 PA 完了
+                self._sht_completed = True
+                logger.info("SHT 完了: 全 %d PA を実行（%d ステップ）。完了バッファ開始",
+                           len(self._completed_pas) + 1, self._total_steps)
 
         # プロンプトを現在の PA に差し替えて内部 VLA に委譲
         effective_prompt = self._current_pa if self._current_pa else sht_prompt
@@ -204,9 +228,14 @@ class HierarchicalVLAPolicy(BasePolicy):
             self._gripper_history.append(float(state_arr[5]))
 
         # 予測アクション追跡（FM 統合用）
-        action = result.get("action")
-        if action is not None:
-            self._action_history.append(np.asarray(action, dtype=np.float32))
+        # Issue #197: VLA は {"actions": ...} (複数形) を返すので key は "actions"
+        # action chunk shape は (T, D) なので先頭 step を history に積む
+        actions = result.get("actions")
+        if actions is not None:
+            actions_arr = np.asarray(actions, dtype=np.float32)
+            if actions_arr.ndim >= 2:
+                actions_arr = actions_arr[0]
+            self._action_history.append(actions_arr)
 
         self._step_count += 1
         self._total_steps += 1
@@ -307,9 +336,10 @@ class HierarchicalVLAPolicy(BasePolicy):
             self._action_history = []
             self._pa_start_gripper = None  # IM-3: PA 開始時の gripper 値を記録
             self._done_votes = []  # IM-2: 確認ウィンドウリセット
-            # PA 切替時にテンポラルアンサンブルバッファをリセット
+            # Issue #189: PA 切替時に postprocessor の PA-跨ぎ state を全クリア
+            # (ensemble_buffer + prev_action + gripper guard 状態)
             if self._postprocessor is not None:
-                self._postprocessor.reset_ensemble_buffer()
+                self._postprocessor.reset_pa()
             # MoE: PA 遷移時に Expert を切り替え
             if self._on_pa_change is not None:
                 try:
@@ -603,8 +633,9 @@ class HierarchicalVLAPolicy(BasePolicy):
                     self._state_history.clear()
                     self._gripper_history.clear()
                     self._vla.reset()
+                    # Issue #189: retry 時も同 PA の transient state を全クリア
                     if self._postprocessor is not None:
-                        self._postprocessor.reset_ensemble_buffer()
+                        self._postprocessor.reset_pa()
                     return False  # PA 完了ではない（retry 中）
                 elif decision.action == "abort":
                     logger.warning(

@@ -9,8 +9,14 @@
     <arg name="upsample" default="true"/>
     <arg name="upsample_hz" default="100"/>
     <arg name="upsample_method" default="spline"/>
-    <arg name="action_smoothing" default="ema"/>
-    <arg name="ema_alpha" default="0.2"/>
+    <!-- Issue #197 (icra_2026_ramen PR #198): 二重 EMA 解消。
+         server 側 (action_postprocessor.py) で action_smoothing α=0.5 を実施するため、
+         client 側は smoothing を OFF にして二重平滑化による応答 5x 遅延を回避する。
+         数値分析 (probe_double_ema.py): server only α=0.5 → step 50% 到達 0.36s
+         vs server 0.3 + client 0.2 → 0.5s (5x 遅延) → 単独で 5x 改善。
+         ema_alpha は default 値を保持 (もし手動で再有効化する場合の妥当値) -->
+    <arg name="action_smoothing" default="none"/>  <!-- was "ema" → "none" (Issue #197) -->
+    <arg name="ema_alpha" default="0.5"/>          <!-- was 0.2 → 0.5 (再有効化時用 default) -->
     <arg name="ma_window" default="5"/>
     <arg name="smooth_gripper" default="false"/>
     <arg name="smooth_base" default="false"/>

@@ -42,6 +42,25 @@ pa_monitor:
   insert_scan_after_navigate: false
   scan_pa_prompt: "Look around to find the target object"
 
+  # P9-B: Navigate 専用収束判定（action の base 次元 magnitude ベース）
+  base_action_indices: [8, 9, 10]   # base_x, base_y, base_theta
+  base_convergence_threshold: 0.005  # base action magnitude がこの閾値未満で Navigate 完了
+
+  # P9-C: Navigate 中のグリッパー開動作検出（物体前到達の指標）
+  navigate_gripper_ready_threshold: 0.5   # gripper action がこの閾値以上で Navigate 完了
+  navigate_gripper_ready_window: 3        # 直近 N ステップ中に閾値超過があれば発火
+
+  # Navigate base action 調整（回転ドリフト対策）
+  navigate_base_theta_scale: 0.1     # base_theta を 10% に減衰（不要な回転を抑制）
+  navigate_base_theta_deadzone: 0.3  # #95: |base_theta| < 0.3 → 0 にして微小回転ノイズ除去
+  navigate_base_xy_min: 0.01         # base_x の最小値（前進を保証）
+
+  # NAV-1: 距離ベースの Navigate 完了判定（シミュレータ/実機で物体距離が利用可能な場合）
+  navigate_distance_threshold: 0.6   # この距離 (m) 以下で Navigate 完了
+  navigate_distance_patience: 5      # 距離増加が N 回連続で Navigate 完了（通り過ぎ検出）
+  # NAV-2: base action 累積変位による Navigate 通り過ぎ検出（距離情報不要）
+  navigate_retreat_patience: 10      # 累積 base_x がピーク後 N 回連続減少で Navigate 完了
+
   min_steps:
     navigate: 28
     go: 28
@@ -61,21 +80,71 @@ pa_monitor:
 
 # --- アクション後処理 ---
 postprocessor:
-  gripper_clip: true           # グリッパー値をクリッピング
-  gripper_clip_min: -1.0       # 学習分布 (v5 q01=-1.006) を保持、hybrid モード下では数値無視
-  # R5: 1.0 → 1.23 (icra_2026_ramen#145) HSR 物理メカ限界 (1.239 rad = 全開)。
-  # Run64/65 pred q99=+1.26 に対して旧 max=1.0 では close 側 28% を潰していた。
-  gripper_clip_max: 1.23       # was 1.0 → 1.23 (R5 fix, icra_2026_ramen#145)
+  # Issue #145: max を 1.0 → 1.23 に修正。R4 で min=-1.0 は既に正しく設定済み
+  # だったが、max=1.0 は Policy 出力 GT q99=+1.24 に対して close 側 28% を
+  # 潰していた。1.23 は HSR 物理メカ限界 (1.239 rad = 全開)、運営 runtime も
+  # 同値で clip するため不整合の心配なし。
+  # min=-1.0 維持の理由: 学習データ分布 (v5 q01=-1.006) を保持。hybrid モード
+  # では閉側 (<0.5) は effort 固定値なので数値大きさは無視される。
+  gripper_clip: true
+  gripper_clip_min: -1.0       # 維持 (R4 で既に修正済み、学習分布を保持)
+  # Issue #197 追加調査: GT 統計で max=1.23 で 15.21% の GT が clip されていた
+  # GT q99=1.2392、 HSR mechanical limit 1.239 (deploy hsr_policy.py:650 で full open に使用)
+  # → max=1.239 にすれば GT clip ≈ 0%、 副作用なし
+  gripper_clip_max: 1.239      # was 1.23 → 1.239 (Issue #197 GT q99=1.2392 対応)
   gripper_binarize: false      # 明示的に OFF (serve_hsr_policy_ws.py デフォルト False と一致)
-  # R5: hybrid モードの 0.5 境界振動抑制。chunk 境界で pred が 0.5 を跨ぐと
-  # grasp action start/cancel と position 指令が交互に発行され、実機で振動・
-  # 物体落下の原因となる。EMA window=5 decay=0.8 で抑制。
-  temporal_ensemble: true
-  ensemble_window: 5
-  ensemble_decay: 0.8
-  # R5: 運営 grasp action が既に力制御済みのため二重制御回避 (class default 明示化)
+  # Issue #145: 運営側 grasp action が既に力制御しているため二重制御を避ける
   gripper_force_guard: false
   gripper_contact_guard: false
-  action_smoothing: true       # EMA アクションスムージング (Jerk -40%, MSE -6.8%)
-  action_smoothing_alpha: 0.3  # EMA 係数 (0.3 = 強い平滑化, 1.0 = なし)
-  action_smoothing_exclude_dims: [5]  # gripper はスムージング除外
+  # Issue #145: hybrid 0.5 境界振動抑制
+  # Issue #197: ACT (Zhao et al. 2023) 流の chunk overlap ensemble に強化。
+  # chunk_size=10 と整合 (window 全 chunk カバー)、 decay=0.5 で「直近 chunk 重視 + 過去重ね」
+  # 旧 window=5/decay=0.8 (重み [0.30, 0.24, 0.20, 0.15, 0.12]) は ACT 慣行より弱い
+  # 新 window=10/decay=0.5 (重み [0.50, 0.25, 0.13, 0.06, ...]) は 1 chunk 全体を加重
+  temporal_ensemble: true
+  ensemble_window: 10           # was 5 → 10 (chunk_size=10 と一致、 ACT 標準)
+  ensemble_decay: 0.5           # was 0.8 → 0.5 (直近重視を強化)
+  head_zero_mask: true         # #68: head action をゼロマスク (E-6: GT の 97%+ が |val|<0.001)
+  # Issue #197: 二重 EMA 検証で「server α=0.3 + client α=0.2」 が応答 5x 遅延と判明。
+  # 単独 server smoothing で α=0.5 に上げ、 応答時間 5τ=0.84s → 0.36s (2.3x 改善)。
+  # client 側は launch ファイルで action_smoothing="none" に設定して二重を解消。
+  # OPT-5 検証 (jerk -40%, MSE -6.8% @ α=0.3) からは smoothing が緩むが、
+  # R4 で gripper close 反応 3 秒という症状を考慮し応答性を優先。
+  action_smoothing: true
+  action_smoothing_alpha: 0.5  # was 0.3 → 0.5 (応答性 2x 向上、 単独 EMA 前提)
+  action_smoothing_exclude_dims: [5]  # gripper はスムージング除外 (hybrid mode 前提)
+
+  # Issue #197 (B6/B1'): 根本対処は学習側 — deploy 後処理で対症は副作用大と判明
+  #
+  # probe v3-v7 多 ep 検証で以下を発見:
+  # - B6 (base_theta NBR>1.0): 累積 |θ|/GT は ほぼ 1.04 (動きすぎではなく位相ずれ)
+  # - B1' (gripper close 早い): pick-coffee 3 ep 平均で -0.33 frame (ep0 特殊事例)
+  # - deadband + closing_rate_cap を有効にすると 6 task 中 5 task で model 動作量が
+  #   GT から離れる副作用 (model の確率的に良い出力を後処理で歪めている)
+  #
+  # → deploy では新オプションを OFF (実装は ActionPostprocessor に保持、 学習修正後に再有効化検討)
+  # → 本質的解決は再学習 (base_theta loss weight、 action chunking shift 等)
+  base_deadband: false
+  base_dims: [10]
+  base_deadband_threshold: 0.005
+  gripper_closing_rate_cap: false
+  gripper_closing_rate_max: 0.15
+  # Issue #197 (B4): prompt validation logging — 実機 prompt 形式を可視化 (動作変更なし、 安全)
+  # 副作用なし、 実機 prompt が想定通り英語で渡っているかを log で検証可能にする
+  prompt_validation: true
+
+  # Issue #197 追加: 学習データ outlier 対策 (base_theta 物理 safety guard)
+  #
+  # 訓練データ調査 (airoa-public-filter file-001、 41 万 frame) で確認:
+  # - base_theta max=1.034 rad/step (= 593 deg/s) outlier が学習データに含有
+  # - HSR base 物理仕様 (~1-2 rad/s) を 5-10 倍超過
+  # - q99=0.178、 max は top 0.0002% の outlier (人間オペレータ急旋回操作の record)
+  # - model はこの分布を学習 → deploy で同様の値を出力する可能性
+  # - probe v6 で実機 model 出力 max=1.053 rad/step を観測 (GT q99 の 3.4x)
+  #
+  # 真の根本解決: 学習データ outlier 除去 + 再学習 (R5 後 Run74 で対処)
+  # R5 deploy safety guard: q99=0.306 を 1.05x マージンで ±0.32 に clip
+  # 副作用: 学習データの 99% (q99 内) は影響なし、 top 1% の outlier のみ抑制
+  action_clip: true
+  action_clip_ranges:
+    10: [-0.32, 0.32]   # base_theta: GT q99=±0.306 を 1.05x、 物理 ~600 deg/s 相当
