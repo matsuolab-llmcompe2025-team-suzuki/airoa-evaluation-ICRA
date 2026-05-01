@@ -7,9 +7,9 @@ Round 5 (Final) submission runtime for **ICRA 2026 VLA Workshop Competition**.
 | **Branch** | `feat/lerobot-pi05-r5` |
 | **Backend** | LeRobot `PI05Policy` (e2e mode, single model) |
 | **Checkpoint** | Run72 s029515 fine-tune of [`pi05-baseline-100k-pt`](https://huggingface.co/ICRA-2026-RAMEN/pi05-baseline-100k-pt) |
-| **Quantization** | **bf16** (deploy-only, ~7.7 GiB) |
-| **VRAM** | ~9.7 GB (RTX 5070 Ti 16 GB に余裕) |
-| **Disk** | ~14.5 GB (Docker ~6.84 GB + ckpt ~7.7 GiB) |
+| **Quantization** | **bf16** (deploy-only, ~8.7 GiB) |
+| **VRAM** | ~9.9 GB (RTX 5070 Ti 16 GB に余裕) |
+| **Disk** | ~14.5 GB (Docker ~6.84 GB + ckpt ~8.7 GiB) |
 
 ## Quick Start
 
@@ -110,9 +110,9 @@ Action layout (composite_11d):
 ## Host Requirements
 
 - Linux + Docker Engine + Docker Compose v2 + NVIDIA Container Toolkit
-- NVIDIA GPU with **16 GB+ VRAM** (uses ~9.7 GB after bf16 quantization)
+- NVIDIA GPU with **16 GB+ VRAM** (uses ~9.9 GB after bf16 quantization)
 - Host RAM: **12 GB+** (new path `LEROBOT_LOW_CPU_MEM=1` default; old path needs ~40 GB)
-- Host SSD: 20 GB+ (Docker image ~7 GB + ckpt ~7.7 GiB + working space)
+- Host SSD: 20 GB+ (Docker image ~7 GB + ckpt ~8.7 GiB + working space)
 - Internet (build-time only); inference works fully offline (`--network none` verified)
 
 ## Key Files
@@ -137,7 +137,7 @@ Action layout (composite_11d):
 
 | Item | R4 | R5 |
 |---|---|---|
-| Model | run52 s040000 (8D output, fp32 ~8.8 GB) | **Run72 s029515 bf16** (32D output → 11D extract, 7.7 GiB) |
+| Model | run52 s040000 (8D output, fp32 ~8.8 GB) | **Run72 s029515 bf16** (32D output → 11D extract, 8.7 GiB) |
 | Training data | `airoa-sft-v5` | **`airoa-public-filter`** (public-task focused) |
 | `transformers` | 5.3.0 (nested SigLIPVisionModel) | **5.7.0** (flat SigLIPVisionModel) |
 | `lerobot` fork | @ramen `c343490c` (vision_tower bug) | **@ramen `7431fb1d`** (PR #9 vision_tower fix) |
@@ -146,7 +146,7 @@ Action layout (composite_11d):
 | `config.json` `dtype` | `float32` | **`bfloat16`** (bf16 alloc) |
 | Action postprocessor | basic clip + EMA | **gripper_clip 1.239, EMA α=0.5, ensemble window=10/decay=0.5, action_clip [base_theta ±0.32], prompt_validation** (Issue #197 safety guards) |
 | Client EMA | `action_smoothing=ema, ema_alpha=0.2` | **`action_smoothing=none`** (double-EMA eliminated) |
-| VRAM | ~9 GB | ~9.7 GB |
+| VRAM | ~9 GB | ~9.9 GB |
 | CPU RAM peak | ~30 GB | **~9 GB** (PR #12 `LEROBOT_LOW_CPU_MEM=1` default, -78%) |
 | Startup time | ~111 s | **~6 s** (PR #12 new path, -95%) |
 

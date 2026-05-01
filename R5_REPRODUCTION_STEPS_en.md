@@ -9,22 +9,22 @@
 | **Quantization** | **bf16 quantized** (deploy-only, VRAM-constrained) |
 | Base model | `ICRA-2026-RAMEN/pi05-baseline-100k-pt` (organizer-published) |
 | Training data | `ICRA-2026-RAMEN/airoa-public-filter` |
-| **Checkpoint (R2)** | `s3://airoa-icra-team-11/r5-pi05-run72-pf-noeval-32d-s029515/` (**bf16 quantized, 7.7 GiB**) |
+| **Checkpoint (R2)** | `s3://airoa-icra-team-11/r5-pi05-run72-pf-noeval-32d-s029515/` (**bf16 quantized, 8.7 GiB**) |
 | **HF Hub (deploy, bf16)** | **`ICRA-2026-RAMEN/pi05-round5-run72-pf-noeval-32d-bf16`** |
 | HF Hub (training fp32, ref) | `ICRA-2026-RAMEN/pi05-round5-run72-pf-noeval-32d` @ commit `a7bbf6d4` |
 | Fork repository | `https://github.com/matsuolab-llmcompe2025-team-suzuki/airoa-evaluation-ICRA` |
 | Branch | `feat/lerobot-pi05-r5` |
 | Backend | `lerobot` (pre-set in `.env`, no manual export needed) |
 | Mode | `e2e` (pre-set in `.env`, HVLA not used, single-model approach) |
-| **VRAM** | **~9.7 GB** (bf16 quantized; A100 measured. RTX 5070 Ti 16 GB has headroom) |
-| **SSD** | Docker ~6.84 GB + checkpoint **~7.7 GiB** = **~14.5 GB** (within 30 GB limit) |
+| **VRAM** | **~9.9 GB** (bf16 quantized; A100 measured. RTX 5070 Ti 16 GB has headroom) |
+| **SSD** | Docker ~6.84 GB + checkpoint **~8.7 GiB** = **~14.5 GB** (within 30 GB limit) |
 | Tokenizer | Bundled in container (`/workspace/tokenizer/paligemma-3b-pt-224`, no HF_TOKEN needed) |
 
 ## Major Changes in R5 (Diff from R4)
 
 | Item | R4 | R5 |
 |------|-----|-----|
-| Submitted model | run52 s040000 (8D output → 11D pad, fp32 ~8.8 GB) | **Run72 s029515 bf16** (32D output → 11D extract, 7.7 GiB) |
+| Submitted model | run52 s040000 (8D output → 11D pad, fp32 ~8.8 GB) | **Run72 s029515 bf16** (32D output → 11D extract, 8.7 GiB) |
 | Training data | `airoa-sft-v5` | **`airoa-public-filter`** (public-task-focused) |
 | `transformers` | 5.3.0 (nested SigLIPVisionModel) | **5.7.0** (flat SigLIPVisionModel) |
 | `lerobot` fork | @ramen `c343490c` (vision_tower bug) | **@ramen `7431fb1d`** (PR #9 vision_tower fix) |
@@ -33,7 +33,7 @@
 | `config.json` `dtype` | `"float32"` | **`"bfloat16"`** (required for bf16 alloc) |
 | Action postprocessor | basic EMA (α=0.3) + clip [-1.0, 1.23] | **Issue #197 fix suite** (see table below) |
 | Client EMA | `action_smoothing=ema, ema_alpha=0.2` (double-EMA) | **`action_smoothing=none`** (server-only EMA, 5x faster response) |
-| **VRAM** | ~9 GB | **~9.7 GB** (bf16: fp32 16.5 GB → 9.7 GB) |
+| **VRAM** | ~9 GB | **~9.9 GB** (bf16: fp32 16.5 GB → 9.9 GB) |
 | **CPU RAM peak** | ~30 GB (PI05Policy.from_pretrained double-buffering) | **~9 GB** (PR #12 new path `LEROBOT_LOW_CPU_MEM=1` default, -78%) |
 | **Startup time** | ~111 s | **~6 s** (PR #12 new path, -95%) |
 
@@ -52,12 +52,12 @@
 
 ## Prerequisites
 
-- NVIDIA GPU (**16 GB+ VRAM**; uses ~9.7 GB after bf16 quantization)
+- NVIDIA GPU (**16 GB+ VRAM**; uses ~9.9 GB after bf16 quantization)
 - Host RAM: **12 GB+** (new path `LEROBOT_LOW_CPU_MEM=1` default has peak ~9 GB)
   - Old path (`LEROBOT_LOW_CPU_MEM=0`) requires CPU peak ~40 GB; OOM on 24 GB hosts
 - Docker (>= 20.10) + Docker Compose v2 + NVIDIA Container Toolkit
 - AWS CLI (`pip install awscli`)
-- Host SSD free space: 20 GB+ (Docker image ~7 GB + ckpt ~7.7 GiB + working space)
+- Host SSD free space: 20 GB+ (Docker image ~7 GB + ckpt ~8.7 GiB + working space)
 - HF_TOKEN is **not required** (PaliGemma tokenizer bundled in container)
 - Internet access: build-time only; inference works fully offline (`--network none` verified)
 
@@ -83,7 +83,7 @@ Expected file listing (bf16 quantized):
 ```
 checkpoints/r5/
 ├── config.json                                                 (2.9 KB, dtype="bfloat16")
-├── model.safetensors                                           (~7.7 GiB, bf16 quantized)
+├── model.safetensors                                           (~8.7 GiB, bf16 quantized)
 ├── policy_preprocessor.json                                    (2.3 KB)
 ├── policy_preprocessor_step_2_normalizer_processor.safetensors (3.8 KB)
 ├── policy_postprocessor.json                                   (663 B)
@@ -172,7 +172,7 @@ R5 mitigations (all in place):
 1. **lerobot fork @ramen `7431fb1d`**: silent fallback converted to `RuntimeError` + nested→flat auto-remap (PR #9)
 2. **`PI05Policy.from_pretrained(strict=True)`**: explicitly set in `lerobot_hsr_policy.py`
 3. **transformers 5.7.0**: flat SigLIPVisionModel matches Run72 ckpt 1:1
-4. **bf16 quantization**: addresses VRAM constraint (RTX 5070 Ti 16 GB) — ~16.5 GB → ~9.7 GB
+4. **bf16 quantization**: addresses VRAM constraint (RTX 5070 Ti 16 GB) — ~16.5 GB → ~9.9 GB
 
 ### Checkpoint preprocessing (automated by entrypoint.sh)
 
@@ -225,8 +225,8 @@ The R5 submission ckpt is **bf16 quantized**. fp32 inference requires ~16.5 GB V
 
 | Aspect | fp32 (training side) | **bf16 (R5 submission)** |
 |---|---|---|
-| `model.safetensors` | 15.4 GiB | **7.7 GiB** |
-| Inference VRAM | ~16.5 GB | **~9.7 GB** |
+| `model.safetensors` | 15.4 GiB | **8.7 GiB** |
+| Inference VRAM | ~16.5 GB | **~9.9 GB** |
 | `config.json` `dtype` | `"float32"` | `"bfloat16"` |
 | Inference latency (warm) | ~620 ms | **~370 ms** |
 | Performance gap (offline eval, mean over 6 public tasks) | (baseline) | corr Δ -0.002, NBR Δ -0.024 (within tolerance; in fact slightly better) |
