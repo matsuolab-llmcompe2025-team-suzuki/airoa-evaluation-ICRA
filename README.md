@@ -111,7 +111,7 @@ Action layout (composite_11d):
 
 - Linux + Docker Engine + Docker Compose v2 + NVIDIA Container Toolkit
 - NVIDIA GPU with **16 GB+ VRAM** (uses ~9.7 GB after bf16 quantization)
-- Host RAM: 16 GB+
+- Host RAM: **12 GB+** (new path `LEROBOT_LOW_CPU_MEM=1` default; old path needs ~40 GB)
 - Host SSD: 20 GB+ (Docker image ~7 GB + ckpt ~7.7 GiB + working space)
 - Internet (build-time only); inference works fully offline (`--network none` verified)
 
@@ -147,6 +147,8 @@ Action layout (composite_11d):
 | Action postprocessor | basic clip + EMA | **gripper_clip 1.239, EMA α=0.5, ensemble window=10/decay=0.5, action_clip [base_theta ±0.32], prompt_validation** (Issue #197 safety guards) |
 | Client EMA | `action_smoothing=ema, ema_alpha=0.2` | **`action_smoothing=none`** (double-EMA eliminated) |
 | VRAM | ~9 GB | ~9.7 GB |
+| CPU RAM peak | ~30 GB | **~9 GB** (PR #12 `LEROBOT_LOW_CPU_MEM=1` default, -78%) |
+| Startup time | ~111 s | **~6 s** (PR #12 new path, -95%) |
 
 ## Submission Mode
 

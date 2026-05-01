@@ -13,7 +13,9 @@ Action padding:
     Model outputs 8D → padded to 11D (3 zeros for base_x, base_y, base_t)
 """
 
+import gc
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +24,111 @@ from PIL import Image
 from policy_client.base_policy import BasePolicy
 
 logger = logging.getLogger(__name__)
+
+
+def _load_pi05_low_cpu_mem(checkpoint_dir: str, device: str, strict: bool = True):
+    """meta デバイス経由で PI05Policy を低 CPU RAM で load する。
+
+    通常 LeRobot の PI05Policy.from_pretrained は CPU 上で fp32 model 構築
+    (~19GB) + safetensors を CPU に展開 (~9.7GB) で peak ~30GB。
+    本関数は init_empty_weights + load_file(device="cuda") + assign=True で
+    CPU peak を ~10GB 以下に抑える。R3 MoE 実装 (src/moe/policy.py) と
+    同じパターン。RTX 5070 Ti (16GB GPU + ~24GB CPU RAM) 環境で必要。
+    """
+    from accelerate import init_empty_weights
+    from lerobot.configs.policies import PreTrainedConfig
+    from lerobot.policies.pi05.modeling_pi05 import PI05Policy
+    from safetensors.torch import load_file
+
+    pretrained_path = Path(checkpoint_dir)
+    model_path = pretrained_path / "model.safetensors"
+    if not model_path.exists():
+        raise FileNotFoundError(f"model.safetensors not found: {model_path}")
+
+    # PI05Config を draccus で parse (PI05Policy.from_pretrained と同等)
+    config = PreTrainedConfig.from_pretrained(checkpoint_dir)
+
+    # meta デバイス上で構築 (CPU 0、GPU 0 — paligemma は config から空構築のみ、HF fetch なし)
+    # PI05Policy.__init__ の末尾で self.model.to(config.device) が走るため、config.device を
+    # 一時的に "meta" に書き換え (meta → meta の no-op に変える)。load 後に target device へ移動。
+    logger.info("Building PI05Policy on meta device (low_cpu_mem mode)")
+    original_device = config.device
+    config.device = "meta"
+    try:
+        with init_empty_weights():
+            model = PI05Policy(config)
+    finally:
+        config.device = original_device
+
+    # safetensors を直接 GPU に load (CPU を経由しない)
+    logger.info("Loading state_dict directly to %s (low_cpu_mem)", device)
+    state_dict = load_file(str(model_path), device=device)
+    logger.info("Loaded state_dict: %d keys", len(state_dict))
+
+    # PR #9 と同等の vision_tower remap + その他 key 調整
+    fixed = model._fix_pytorch_state_dict_keys(state_dict, model.config)
+    del state_dict
+
+    # "model." prefix 追加
+    remapped = {}
+    remap_count = 0
+    for k, v in fixed.items():
+        if not k.startswith("model."):
+            remapped[f"model.{k}"] = v
+            remap_count += 1
+        else:
+            remapped[k] = v
+    del fixed
+    if remap_count > 0:
+        logger.info("Remapped %d keys with 'model.' prefix", remap_count)
+
+    # DAFD / aux-head 拡張への対応 (PI05Policy.from_pretrained と同等)
+    effective_strict = (
+        strict
+        and not getattr(config, "use_dafd", False)
+        and not getattr(config, "use_aux_base_velocity_head", False)
+    )
+
+    # assign=True: meta tensor を GPU tensor で参照差替 (コピーなし)
+    missing, unexpected = model.load_state_dict(
+        remapped, strict=effective_strict, assign=True,
+    )
+    del remapped
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    if missing:
+        logger.warning("Missing keys: %d (showing first 5)", len(missing))
+        for k in missing[:5]:
+            logger.warning("  - %s", k)
+    if unexpected:
+        logger.warning("Unexpected keys: %d (showing first 5)", len(unexpected))
+        for k in unexpected[:5]:
+            logger.warning("  - %s", k)
+    if not missing and not unexpected:
+        logger.info("All keys loaded successfully (low_cpu_mem)!")
+
+    # meta tensor が残っている場合の置換 (R3 MoE 実装と同等)
+    for name, param in list(model.named_parameters()):
+        if param.device.type == "meta":
+            parts = name.split(".")
+            mod = model
+            for p in parts[:-1]:
+                mod = getattr(mod, p)
+            setattr(mod, parts[-1], torch.nn.Parameter(
+                torch.zeros(param.shape, device=device, dtype=param.dtype)
+            ))
+    for name, buf in list(model.named_buffers()):
+        if buf.device.type == "meta":
+            parts = name.split(".")
+            mod = model
+            for p in parts[:-1]:
+                mod = getattr(mod, p)
+            mod.register_buffer(parts[-1], torch.zeros(
+                buf.shape, device=device, dtype=buf.dtype,
+            ))
+
+    return model
 
 _IMAGE_SIZE = (224, 224)
 _HSR_ACTION_DIM = 11  # 8 joints + 3 base twist
@@ -100,12 +207,20 @@ class LeRobotHSRPolicy(BasePolicy):
                                "loading without sanity check (silent-fallback risk)")
                 self._policy = PI05MoEPolicy.from_pretrained(checkpoint_dir)
         else:
-            from lerobot.policies.pi05.modeling_pi05 import PI05Policy
-            # strict=True converts PR #9's silent-fallback (random vision_tower init)
-            # into a hard RuntimeError. Without this we risk re-deploying R4's 0% bug.
-            self._policy = PI05Policy.from_pretrained(checkpoint_dir, strict=True)
+            # LEROBOT_LOW_CPU_MEM=1 (default): meta デバイス + GPU 直接 load で
+            # CPU RAM peak を 25-30GB → ~10GB に削減 (RTX 5070 Ti 等 24GB RAM 環境向け)。
+            # =0 で旧ルート (PI05Policy.from_pretrained) にフォールバック。
+            low_cpu_mem = os.environ.get("LEROBOT_LOW_CPU_MEM", "1") not in ("0", "false", "False")
+            if low_cpu_mem:
+                self._policy = _load_pi05_low_cpu_mem(checkpoint_dir, device=device, strict=True)
+            else:
+                from lerobot.policies.pi05.modeling_pi05 import PI05Policy
+                # strict=True converts PR #9's silent-fallback (random vision_tower init)
+                # into a hard RuntimeError. Without this we risk re-deploying R4's 0% bug.
+                self._policy = PI05Policy.from_pretrained(checkpoint_dir, strict=True)
 
         self._policy.eval()
+        # 新ルート (low_cpu_mem) では既に GPU 上にあるが、to() は no-op で安全
         self._policy.to(device)
 
         self._preprocessor = DataProcessorPipeline.from_pretrained(
