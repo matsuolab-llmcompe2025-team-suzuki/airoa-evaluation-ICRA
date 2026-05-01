@@ -209,7 +209,7 @@ class LeRobotHSRPolicy(BasePolicy):
         else:
             # LEROBOT_LOW_CPU_MEM=1 (default): meta デバイス + GPU 直接 load で
             # CPU RAM peak を 25-30GB → ~10GB に削減 (RTX 5070 Ti 等 24GB RAM 環境向け)。
-            # =0 で旧来路 (PI05Policy.from_pretrained) にフォールバック。
+            # =0 で旧ルート (PI05Policy.from_pretrained) にフォールバック。
             low_cpu_mem = os.environ.get("LEROBOT_LOW_CPU_MEM", "1") not in ("0", "false", "False")
             if low_cpu_mem:
                 self._policy = _load_pi05_low_cpu_mem(checkpoint_dir, device=device, strict=True)
@@ -220,7 +220,7 @@ class LeRobotHSRPolicy(BasePolicy):
                 self._policy = PI05Policy.from_pretrained(checkpoint_dir, strict=True)
 
         self._policy.eval()
-        # low_cpu_mem 路では既に GPU 上にあるが、to() は no-op で安全
+        # 新ルート (low_cpu_mem) では既に GPU 上にあるが、to() は no-op で安全
         self._policy.to(device)
 
         self._preprocessor = DataProcessorPipeline.from_pretrained(
