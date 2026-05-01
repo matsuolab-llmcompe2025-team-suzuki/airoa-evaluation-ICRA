@@ -36,6 +36,12 @@ services:
       - ${POLICY_CHECKPOINT_PATH:-./.docker_cache/policy_checkpoint}:/policy_checkpoint:ro
       - ${POLICY_CACHE_DIR:-${OPENPI_CACHE_DIR:-./.docker_cache/policy_cache}}:/policy_assets
       # HF キャッシュは Dockerfile でビルド済み（ボリュームマウント不要）
+      # Issue #197 (PR #9) 対応: hierarchical_config_optimized.yaml と pa_decomposition_v2.json を
+      # host から bind-mount。 image 側の COPY (Dockerfile L22-23) と冗長だが、 古い image を pull
+      # した場合や rebuild 漏れでも ActionPostprocessor wrap が確実に有効化されるための保険。
+      # 変更時の再ビルド不要、 yaml 編集 → container 再起動のみで反映可能。
+      - ./hierarchical_config_optimized.yaml:/workspace/hierarchical_config.yaml:ro
+      - ./pa_decomposition_v2.json:/workspace/pa_decomposition.json:ro
     restart: unless-stopped
 
   hsr_client:
