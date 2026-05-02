@@ -25,7 +25,7 @@
 | Item | R4 | R5 |
 |------|-----|-----|
 | Submitted model | run52 s040000 (8D output → 11D pad, fp32 ~8.8 GB) | **Run73 s020000 bf16** (32D output → 11D extract, 9.35 GB; switched from Run72 s029515 after thorough A100 verification: see `eval/docs/r5_final_model_selection_v3.md`) |
-| Training data | `airoa-sft-v5` | **`airoa-public-filter`** (public-task-focused) |
+| Training data | `airoa-sft-v5` | **`airoa-public-filter-noeval`** (public-task-focused, eval episodes excluded) |
 | `transformers` | 5.3.0 (nested SigLIPVisionModel) | **5.7.0** (flat SigLIPVisionModel) |
 | `lerobot` fork | @ramen `c343490c` (vision_tower bug) | **@ramen `7431fb1d`** (PR #9 vision_tower fix) |
 | `PI05Policy.from_pretrained` | default `strict=False` | **`strict=True`** (silent-fallback prevented) |

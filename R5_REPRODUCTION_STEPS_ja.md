@@ -25,7 +25,7 @@
 | 項目 | R4 | R5 |
 |------|-----|-----|
 | 提出モデル | run52 s040000 (8D 出力 → 11D pad、 fp32 ~8.8 GB) | **Run73 s020000 bf16** (32D 出力 → 11D 抽出、 9.35 GB; A100 徹底検証 (`eval/docs/r5_final_model_selection_v3.md`) で Run72 s029515 から差替) |
-| 学習データ | `airoa-sft-v5` | **`airoa-public-filter`** (公開 task 特化) |
+| 学習データ | `airoa-sft-v5` | **`airoa-public-filter-noeval`** (公開 task 特化、 eval ep 除外版) |
 | `transformers` | 5.3.0 (nested SigLIPVisionModel) | **5.7.0** (flat SigLIPVisionModel) |
 | `lerobot` fork | @ramen `c343490c` (vision_tower bug 含) | **@ramen `7431fb1d`** (PR #9 vision_tower fix) |
 | `PI05Policy.from_pretrained` | デフォルト `strict=False` | **`strict=True`** (silent fallback 防止) |
