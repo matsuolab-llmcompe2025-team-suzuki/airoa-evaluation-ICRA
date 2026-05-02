@@ -138,7 +138,7 @@ Action layout (composite_11d):
 | Item | R4 | R5 |
 |---|---|---|
 | Model | run52 s040000 (8D output, fp32 ~8.8 GB) | **Run73 s20000 bf16** (32D output → 11D extract, 8.7 GiB) |
-| Training data | `airoa-sft-v5` | **`airoa-public-filter`** (public-task focused) |
+| Training data | `airoa-sft-v5` | **`airoa-public-filter-noeval`** (public-task focused) |
 | `transformers` | 5.3.0 (nested SigLIPVisionModel) | **5.7.0** (flat SigLIPVisionModel) |
 | `lerobot` fork | @ramen `c343490c` (vision_tower bug) | **@ramen `7431fb1d`** (PR #9 vision_tower fix) |
 | `PI05Policy.from_pretrained` | `strict=False` (silent fallback risk) | **`strict=True`** (silent fallback prevented) |

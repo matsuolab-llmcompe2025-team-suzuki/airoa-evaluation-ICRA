@@ -8,7 +8,7 @@
 | Submission step | s20000 (final checkpoint) |
 | **Quantization** | **bf16 quantized** (deploy-only, VRAM-constrained) |
 | Base model | `ICRA-2026-RAMEN/pi05-baseline-100k-pt` (organizer-published) |
-| Training data | `ICRA-2026-RAMEN/airoa-public-filter` |
+| Training data | `ICRA-2026-RAMEN/airoa-public-filter-noeval` |
 | **Checkpoint (R2)** | `s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s20000/` (**bf16 quantized, 8.7 GiB**) |
 | **HF Hub (deploy, bf16)** | **`ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16`** |
 | HF Hub (training fp32, ref) | `ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d` |
@@ -25,7 +25,7 @@
 | Item | R4 | R5 |
 |------|-----|-----|
 | Submitted model | run52 s040000 (8D output → 11D pad, fp32 ~8.8 GB) | **Run73 s20000 bf16** (32D output → 11D extract, 8.7 GiB) |
-| Training data | `airoa-sft-v5` | **`airoa-public-filter`** (public-task-focused) |
+| Training data | `airoa-sft-v5` | **`airoa-public-filter-noeval`** (public-task-focused) |
 | `transformers` | 5.3.0 (nested SigLIPVisionModel) | **5.7.0** (flat SigLIPVisionModel) |
 | `lerobot` fork | @ramen `c343490c` (vision_tower bug) | **@ramen `7431fb1d`** (PR #9 vision_tower fix) |
 | `PI05Policy.from_pretrained` | default `strict=False` | **`strict=True`** (silent-fallback prevented) |
@@ -171,7 +171,7 @@ R4 failed due to a **silent fallback** inside `PI05Policy.from_pretrained` (visi
 R5 mitigations (all in place):
 1. **lerobot fork @ramen `7431fb1d`**: silent fallback converted to `RuntimeError` + nested→flat auto-remap (PR #9)
 2. **`PI05Policy.from_pretrained(strict=True)`**: explicitly set in `lerobot_hsr_policy.py`
-3. **transformers 5.7.0**: flat SigLIPVisionModel matches Run72 ckpt 1:1
+3. **transformers 5.7.0**: flat SigLIPVisionModel matches Run73 ckpt 1:1
 4. **bf16 quantization**: addresses VRAM constraint (RTX 5070 Ti 16 GB) — ~16.5 GB → ~9.9 GB
 
 ### Checkpoint preprocessing (automated by entrypoint.sh)
@@ -179,12 +179,12 @@ R5 mitigations (all in place):
 The following `config.json` fields are auto-fixed at startup (a working copy is used so read-only mounts still work):
 - `compile_model: True → False` (true causes 300-sec timeout on first inference)
 - `gradient_checkpointing: True → False` (unnecessary for inference; saves memory)
-- DAFD fields removed: `use_dafd`, `dafd_gripper_*` × 6, `dafd_sign_*` × 2 (LeRobot compatibility; only present in Run72 training-time config)
+- DAFD fields removed: `use_dafd`, `dafd_gripper_*` × 6, `dafd_sign_*` × 2 (LeRobot compatibility; only present in training-time config)
 - `policy_preprocessor.json` `tokenizer_name` rewritten to in-container path (offline-safe)
 
-### State pad logic (for Run72 32D state ckpt)
+### State pad logic (for Run73 32D state ckpt)
 
-The HSR client sends 8D state (`arm 5 + gripper 1 + head 2`), but Run72 ckpt's `policy_preprocessor.observation.state.{q01,q99,...}` is stored as 32D. `server/lerobot_hsr_policy.py::_pad_state_8d_to_32d` pads with the following layout:
+The HSR client sends 8D state (`arm 5 + gripper 1 + head 2`), but Run73 ckpt's `policy_preprocessor.observation.state.{q01,q99,...}` is stored as 32D. `server/lerobot_hsr_policy.py::_pad_state_8d_to_32d` pads with the following layout:
 
 | 8D src | 32D dst | Description |
 |--------|---------|------|

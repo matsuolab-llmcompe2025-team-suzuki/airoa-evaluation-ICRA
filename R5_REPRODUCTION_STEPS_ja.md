@@ -8,7 +8,7 @@
 | 提出 step | s20000 (final checkpoint) |
 | **量子化** | **bf16 量子化版** (deploy 用、 VRAM 制約対応) |
 | ベースモデル | `ICRA-2026-RAMEN/pi05-baseline-100k-pt` (運営公開モデル) |
-| 学習データ | `ICRA-2026-RAMEN/airoa-public-filter` |
+| 学習データ | `ICRA-2026-RAMEN/airoa-public-filter-noeval` |
 | **チェックポイント (R2)** | `s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s20000/` (**bf16 量子化版、 8.7 GiB**) |
 | **HF Hub (deploy 用、 bf16)** | **`ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16`** |
 | HF Hub (学習側 fp32、 参考) | `ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d` |
@@ -25,7 +25,7 @@
 | 項目 | R4 | R5 |
 |------|-----|-----|
 | 提出モデル | run52 s040000 (8D 出力 → 11D pad、 fp32 ~8.8 GB) | **Run73 s20000 bf16** (32D 出力 → 11D 抽出、 8.7 GiB) |
-| 学習データ | `airoa-sft-v5` | **`airoa-public-filter`** (公開 task 特化) |
+| 学習データ | `airoa-sft-v5` | **`airoa-public-filter-noeval`** (公開 task 特化) |
 | `transformers` | 5.3.0 (nested SigLIPVisionModel) | **5.7.0** (flat SigLIPVisionModel) |
 | `lerobot` fork | @ramen `c343490c` (vision_tower bug 含) | **@ramen `7431fb1d`** (PR #9 vision_tower fix) |
 | `PI05Policy.from_pretrained` | デフォルト `strict=False` | **`strict=True`** (silent fallback 防止) |
@@ -171,7 +171,7 @@ R4 では `PI05Policy.from_pretrained` 内に **silent fallback** (vision_tower 
 R5 では以下で完全対策済:
 1. **lerobot fork @ramen `7431fb1d`**: silent fallback を `RuntimeError` に変換 + nested→flat 自動 remap (PR #9)
 2. **`PI05Policy.from_pretrained(strict=True)`**: `lerobot_hsr_policy.py` で明示
-3. **transformers 5.7.0**: flat SigLIPVisionModel で Run72 ckpt と 1:1 一致
+3. **transformers 5.7.0**: flat SigLIPVisionModel で Run73 ckpt と 1:1 一致
 4. **bf16 量子化**: VRAM 制約 (RTX 5070 Ti 16 GB) に対応 (~16.5 GB → ~9.9 GB)
 
 ### チェックポイント前処理 (entrypoint.sh による自動化)
@@ -182,9 +182,9 @@ R5 では以下で完全対策済:
 - DAFD フィールド除去: `use_dafd`, `dafd_gripper_*` × 6, `dafd_sign_*` × 2 (LeRobot 互換性)
 - `policy_preprocessor.json` の `tokenizer_name` をコンテナ内パスに書換 (オフライン対応)
 
-### state pad ロジック (Run72 32D state ckpt 用)
+### state pad ロジック (Run73 32D state ckpt 用)
 
-HSR client が送る state は 8D (`arm 5 + gripper 1 + head 2`) ですが、 Run72 ckpt の `policy_preprocessor.observation.state.{q01,q99,...}` は 32D で保存されています。 `server/lerobot_hsr_policy.py` の `_pad_state_8d_to_32d` で以下の layout で pad:
+HSR client が送る state は 8D (`arm 5 + gripper 1 + head 2`) ですが、 Run73 ckpt の `policy_preprocessor.observation.state.{q01,q99,...}` は 32D で保存されています。 `server/lerobot_hsr_policy.py` の `_pad_state_8d_to_32d` で以下の layout で pad:
 
 | 8D src | 32D dst | 説明 |
 |--------|---------|------|
