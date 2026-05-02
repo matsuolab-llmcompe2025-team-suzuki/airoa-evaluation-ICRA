@@ -4,8 +4,8 @@
 
 | Field | Value |
 |------|-----|
-| Model | π0.5 fine-tuned (Run73 s020000) |
-| HF Hub (deploy, bf16) | `ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16` |
+| Model | π0.5 fine-tuned (Run73 s020000, bf16 quantized) |
+| Checkpoint (R2) | `s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s020000/` |
 | Fork repository | `https://github.com/matsuolab-llmcompe2025-team-suzuki/airoa-evaluation-ICRA` |
 | Branch | `feat/lerobot-pi05-r5` |
 | Backend | `lerobot` (pre-set in `.env`, no manual export needed) |
@@ -18,7 +18,6 @@
 
 - NVIDIA GPU (16 GB+ VRAM)
 - Docker + Docker Compose v2 + NVIDIA Container Toolkit
-- `huggingface-cli` (`pip install huggingface_hub`)
 - HF_TOKEN is **not required** (PaliGemma tokenizer is bundled in the container)
 
 ## Reproduction Steps
@@ -34,9 +33,9 @@ git checkout feat/lerobot-pi05-r5
 ### 2. Download the checkpoint
 
 ```bash
-huggingface-cli download \
-    ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16 \
-    --local-dir checkpoints/r5
+export AWS_ENDPOINT_URL=https://eabeb2a5516ef53a191452e5714fc16b.r2.cloudflarestorage.com
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
+    s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s020000/ checkpoints/r5/
 ```
 
 ### 3. Start the container
@@ -70,7 +69,6 @@ roslaunch hsr_policy_client hsr_policy_client.launch
 
 ```
 checkpoints/r5/
-├── README.md
 ├── config.json                                                   (dtype="bfloat16")
 ├── model.safetensors                                             (~9.35 GB)
 ├── policy_preprocessor.json

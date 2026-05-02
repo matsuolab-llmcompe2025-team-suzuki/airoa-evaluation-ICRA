@@ -8,6 +8,7 @@ Round 5 (Final) submission runtime for **ICRA 2026 VLA Workshop Competition**.
 | **Backend** | LeRobot `PI05Policy` (e2e mode, single model) |
 | **Checkpoint** | Run73 s020000 fine-tune of [`pi05-baseline-100k-pt`](https://huggingface.co/ICRA-2026-RAMEN/pi05-baseline-100k-pt) |
 | **Quantization** | bf16 (deploy-only, ~9.35 GB) |
+| **Checkpoint (R2)** | `s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s020000/` |
 | **VRAM** | ~9.9 GB |
 | **Disk** | ~16.5 GB (Docker ~7 GB + ckpt ~9.35 GB) |
 
@@ -19,10 +20,10 @@ git clone https://github.com/matsuolab-llmcompe2025-team-suzuki/airoa-evaluation
 cd airoa-evaluation-ICRA
 git checkout feat/lerobot-pi05-r5
 
-# 2. Download checkpoint (HF Hub, bf16)
-huggingface-cli download \
-    ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16 \
-    --local-dir checkpoints/r5
+# 2. Download checkpoint (R2)
+export AWS_ENDPOINT_URL=https://eabeb2a5516ef53a191452e5714fc16b.r2.cloudflarestorage.com
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
+    s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s020000/ checkpoints/r5/
 
 # 3. Start policy server (Docker)
 export POLICY_CHECKPOINT_PATH=$(pwd)/checkpoints/r5
