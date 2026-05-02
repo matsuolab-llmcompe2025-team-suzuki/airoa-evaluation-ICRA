@@ -6,10 +6,10 @@ Round 5 (Final) submission runtime for **ICRA 2026 VLA Workshop Competition**.
 |---|---|
 | **Branch** | `feat/lerobot-pi05-r5` |
 | **Backend** | LeRobot `PI05Policy` (e2e mode, single model) |
-| **Checkpoint** | Run72 s029515 fine-tune of [`pi05-baseline-100k-pt`](https://huggingface.co/ICRA-2026-RAMEN/pi05-baseline-100k-pt) |
-| **Quantization** | **bf16** (deploy-only, ~8.7 GiB) |
+| **Checkpoint** | Run73 s020000 fine-tune of [`pi05-baseline-100k-pt`](https://huggingface.co/ICRA-2026-RAMEN/pi05-baseline-100k-pt) (R5 final-final, A100 徹底検証 + Run72 から差替) |
+| **Quantization** | **bf16** (deploy-only, ~9.35 GB; LeRobot 公式 keep_fp32 + action 系 fp32 保持) |
 | **VRAM** | ~9.9 GB (RTX 5070 Ti 16 GB に余裕) |
-| **Disk** | ~14.5 GB (Docker ~6.84 GB + ckpt ~8.7 GiB) |
+| **Disk** | ~16.2 GB (Docker ~6.84 GB + ckpt ~9.35 GB) |
 
 ## Quick Start
 
@@ -19,10 +19,15 @@ git clone https://github.com/matsuolab-llmcompe2025-team-suzuki/airoa-evaluation
 cd airoa-evaluation-ICRA
 git checkout feat/lerobot-pi05-r5
 
-# 2. Download checkpoint (R2)
-export AWS_ENDPOINT_URL=https://eabeb2a5516ef53a191452e5714fc16b.r2.cloudflarestorage.com
-aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
-    s3://airoa-icra-team-11/r5-pi05-run72-pf-noeval-32d-s029515/ checkpoints/r5/
+# 2. Download checkpoint (HF Hub, bf16)
+huggingface-cli download \
+    ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16 \
+    --local-dir checkpoints/r5
+
+# (R2 fallback、 Run72 用の旧 location が残っているため Run73 では HF Hub を使用)
+# export AWS_ENDPOINT_URL=https://eabeb2a5516ef53a191452e5714fc16b.r2.cloudflarestorage.com
+# aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
+#     s3://airoa-icra-team-11/r5-pi05-run72-pf-noeval-32d-s029515/ checkpoints/r5/
 
 # 3. Start policy server (Docker)
 export POLICY_CHECKPOINT_PATH=$(pwd)/checkpoints/r5
@@ -112,7 +117,7 @@ Action layout (composite_11d):
 - Linux + Docker Engine + Docker Compose v2 + NVIDIA Container Toolkit
 - NVIDIA GPU with **16 GB+ VRAM** (uses ~9.9 GB after bf16 quantization)
 - Host RAM: **12 GB+** (new path `LEROBOT_LOW_CPU_MEM=1` default; old path needs ~40 GB)
-- Host SSD: 20 GB+ (Docker image ~7 GB + ckpt ~8.7 GiB + working space)
+- Host SSD: 20 GB+ (Docker image ~7 GB + ckpt ~9.35 GB + working space)
 - Internet (build-time only); inference works fully offline (`--network none` verified)
 
 ## Key Files
@@ -137,7 +142,7 @@ Action layout (composite_11d):
 
 | Item | R4 | R5 |
 |---|---|---|
-| Model | run52 s040000 (8D output, fp32 ~8.8 GB) | **Run72 s029515 bf16** (32D output → 11D extract, 8.7 GiB) |
+| Model | run52 s040000 (8D output, fp32 ~8.8 GB) | **Run73 s020000 bf16** (32D output → 11D extract, 9.35 GB; Run72 s029515 から差替) |
 | Training data | `airoa-sft-v5` | **`airoa-public-filter`** (public-task focused) |
 | `transformers` | 5.3.0 (nested SigLIPVisionModel) | **5.7.0** (flat SigLIPVisionModel) |
 | `lerobot` fork | @ramen `c343490c` (vision_tower bug) | **@ramen `7431fb1d`** (PR #9 vision_tower fix) |

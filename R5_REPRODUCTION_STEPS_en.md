@@ -4,27 +4,27 @@
 
 | Field | Value |
 |------|-----|
-| Model | π0.5 fine-tuned (Run72: `pf-noeval-32d`, 32D output, aux-head) |
-| Submission step | s029515 (final checkpoint) |
-| **Quantization** | **bf16 quantized** (deploy-only, VRAM-constrained) |
+| Model | π0.5 fine-tuned (Run73: `r71s50-pf-noeval-32d`, 32D output, re-fine-tuned from Run71 s50000) |
+| Submission step | s020000 (best in Run73 series across Public Task / General eval) |
+| **Quantization** | **bf16 quantized** (deploy-only; LeRobot official keep_fp32 + action heads kept in fp32) |
 | Base model | `ICRA-2026-RAMEN/pi05-baseline-100k-pt` (organizer-published) |
-| Training data | `ICRA-2026-RAMEN/airoa-public-filter` |
-| **Checkpoint (R2)** | `s3://airoa-icra-team-11/r5-pi05-run72-pf-noeval-32d-s029515/` (**bf16 quantized, 8.7 GiB**) |
-| **HF Hub (deploy, bf16)** | **`ICRA-2026-RAMEN/pi05-round5-run72-pf-noeval-32d-bf16`** |
-| HF Hub (training fp32, ref) | `ICRA-2026-RAMEN/pi05-round5-run72-pf-noeval-32d` @ commit `a7bbf6d4` |
+| Training data | `ICRA-2026-RAMEN/airoa-public-filter-noeval` |
+| **HF Hub (deploy, bf16)** | **`ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16`** |
+| HF Hub (training fp32, ref) | `ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d` @ commit `c434e432` (subfolder `checkpoints/020000/pretrained_model`) |
+| (Legacy R2 ref, Run72 only) | `s3://airoa-icra-team-11/r5-pi05-run72-pf-noeval-32d-s029515/` (HF Hub is now the primary source for Run73) |
 | Fork repository | `https://github.com/matsuolab-llmcompe2025-team-suzuki/airoa-evaluation-ICRA` |
 | Branch | `feat/lerobot-pi05-r5` |
 | Backend | `lerobot` (pre-set in `.env`, no manual export needed) |
 | Mode | `e2e` (pre-set in `.env`, HVLA not used, single-model approach) |
 | **VRAM** | **~9.9 GB** (bf16 quantized; A100 measured. RTX 5070 Ti 16 GB has headroom) |
-| **SSD** | Docker ~6.84 GB + checkpoint **~8.7 GiB** = **~14.5 GB** (within 30 GB limit) |
+| **SSD** | Docker ~6.84 GB + checkpoint **~9.35 GB** = **~16.2 GB** (within 30 GB limit) |
 | Tokenizer | Bundled in container (`/workspace/tokenizer/paligemma-3b-pt-224`, no HF_TOKEN needed) |
 
 ## Major Changes in R5 (Diff from R4)
 
 | Item | R4 | R5 |
 |------|-----|-----|
-| Submitted model | run52 s040000 (8D output → 11D pad, fp32 ~8.8 GB) | **Run72 s029515 bf16** (32D output → 11D extract, 8.7 GiB) |
+| Submitted model | run52 s040000 (8D output → 11D pad, fp32 ~8.8 GB) | **Run73 s020000 bf16** (32D output → 11D extract, 9.35 GB; switched from Run72 s029515 after thorough A100 verification: see `eval/docs/r5_final_model_selection_v3.md`) |
 | Training data | `airoa-sft-v5` | **`airoa-public-filter`** (public-task-focused) |
 | `transformers` | 5.3.0 (nested SigLIPVisionModel) | **5.7.0** (flat SigLIPVisionModel) |
 | `lerobot` fork | @ramen `c343490c` (vision_tower bug) | **@ramen `7431fb1d`** (PR #9 vision_tower fix) |
@@ -56,8 +56,8 @@
 - Host RAM: **12 GB+** (new path `LEROBOT_LOW_CPU_MEM=1` default has peak ~9 GB)
   - Old path (`LEROBOT_LOW_CPU_MEM=0`) requires CPU peak ~40 GB; OOM on 24 GB hosts
 - Docker (>= 20.10) + Docker Compose v2 + NVIDIA Container Toolkit
-- AWS CLI (`pip install awscli`)
-- Host SSD free space: 20 GB+ (Docker image ~7 GB + ckpt ~8.7 GiB + working space)
+- `huggingface-cli` (`pip install huggingface_hub`)
+- Host SSD free space: 20 GB+ (Docker image ~7 GB + ckpt ~9.35 GB + working space)
 - HF_TOKEN is **not required** (PaliGemma tokenizer bundled in container)
 - Internet access: build-time only; inference works fully offline (`--network none` verified)
 
@@ -74,21 +74,24 @@ git checkout feat/lerobot-pi05-r5
 ### 2. Download the checkpoint
 
 ```bash
-export AWS_ENDPOINT_URL=https://eabeb2a5516ef53a191452e5714fc16b.r2.cloudflarestorage.com
-aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
-    s3://airoa-icra-team-11/r5-pi05-run72-pf-noeval-32d-s029515/ checkpoints/r5/
+huggingface-cli download \
+    ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16 \
+    --local-dir checkpoints/r5
 ```
+
+(Note: the legacy R2 fallback for Run72 is no longer used. HF Hub is the primary source for Run73.)
 
 Expected file listing (bf16 quantized):
 ```
 checkpoints/r5/
-├── config.json                                                 (2.9 KB, dtype="bfloat16")
-├── model.safetensors                                           (~8.7 GiB, bf16 quantized)
-├── policy_preprocessor.json                                    (2.3 KB)
-├── policy_preprocessor_step_2_normalizer_processor.safetensors (3.8 KB)
-├── policy_postprocessor.json                                   (663 B)
-├── policy_postprocessor_step_0_unnormalizer_processor.safetensors (3.8 KB)
-└── train_config.json                                           (8.0 KB)
+├── README.md                                                   (~3 KB)
+├── config.json                                                 (~3 KB, dtype="bfloat16")
+├── model.safetensors                                           (~9.35 GB, bf16 quantized; action heads kept in fp32)
+├── policy_preprocessor.json                                    (~2 KB)
+├── policy_preprocessor_step_2_normalizer_processor.safetensors (~4 KB)
+├── policy_postprocessor.json                                   (~1 KB)
+├── policy_postprocessor_step_0_unnormalizer_processor.safetensors (~4 KB)
+└── train_config.json                                           (~8 KB)
 ```
 
 ### 3. Start the container
@@ -171,20 +174,20 @@ R4 failed due to a **silent fallback** inside `PI05Policy.from_pretrained` (visi
 R5 mitigations (all in place):
 1. **lerobot fork @ramen `7431fb1d`**: silent fallback converted to `RuntimeError` + nested→flat auto-remap (PR #9)
 2. **`PI05Policy.from_pretrained(strict=True)`**: explicitly set in `lerobot_hsr_policy.py`
-3. **transformers 5.7.0**: flat SigLIPVisionModel matches Run72 ckpt 1:1
-4. **bf16 quantization**: addresses VRAM constraint (RTX 5070 Ti 16 GB) — ~16.5 GB → ~9.9 GB
+3. **transformers 5.7.0**: flat SigLIPVisionModel matches Run72/Run73 ckpt 1:1
+4. **bf16 quantization**: addresses VRAM constraint (RTX 5070 Ti 16 GB) — ~16.5 GB → ~9.9 GB. LeRobot's official 5 patterns (`to_bfloat16_for_selected_params`) plus action heads (`action_in_proj`, `action_out_proj`, `time_mlp_in`, `time_mlp_out`, `state_proj`) are kept in fp32 to avoid dtype mismatch in the diffusion denoising loop
 
 ### Checkpoint preprocessing (automated by entrypoint.sh)
 
 The following `config.json` fields are auto-fixed at startup (a working copy is used so read-only mounts still work):
 - `compile_model: True → False` (true causes 300-sec timeout on first inference)
 - `gradient_checkpointing: True → False` (unnecessary for inference; saves memory)
-- DAFD fields removed: `use_dafd`, `dafd_gripper_*` × 6, `dafd_sign_*` × 2 (LeRobot compatibility; only present in Run72 training-time config)
+- DAFD fields removed: `use_dafd`, `dafd_gripper_*` × 6, `dafd_sign_*` × 2 (LeRobot compatibility; only present in Run72/Run73 training-time configs)
 - `policy_preprocessor.json` `tokenizer_name` rewritten to in-container path (offline-safe)
 
-### State pad logic (for Run72 32D state ckpt)
+### State pad logic (for Run73 32D state ckpt)
 
-The HSR client sends 8D state (`arm 5 + gripper 1 + head 2`), but Run72 ckpt's `policy_preprocessor.observation.state.{q01,q99,...}` is stored as 32D. `server/lerobot_hsr_policy.py::_pad_state_8d_to_32d` pads with the following layout:
+The HSR client sends 8D state (`arm 5 + gripper 1 + head 2`), but Run73 (and the legacy Run72) ckpt's `policy_preprocessor.observation.state.{q01,q99,...}` is stored as 32D. `server/lerobot_hsr_policy.py::_pad_state_8d_to_32d` pads with the following layout:
 
 | 8D src | 32D dst | Description |
 |--------|---------|------|
@@ -225,13 +228,15 @@ The R5 submission ckpt is **bf16 quantized**. fp32 inference requires ~16.5 GB V
 
 | Aspect | fp32 (training side) | **bf16 (R5 submission)** |
 |---|---|---|
-| `model.safetensors` | 15.4 GiB | **8.7 GiB** |
+| `model.safetensors` | 16.57 GB | **9.35 GB** |
 | Inference VRAM | ~16.5 GB | **~9.9 GB** |
 | `config.json` `dtype` | `"float32"` | `"bfloat16"` |
-| Inference latency (warm) | ~620 ms | **~370 ms** |
-| Performance gap (offline eval, mean over 6 public tasks) | (baseline) | corr Δ -0.002, NBR Δ -0.024 (within tolerance; in fact slightly better) |
+| Inference latency (warm, A100) | (not measured) | **~315 ms / chunk = 31.5 ms / frame** |
+| Performance gap (offline eval, mean over 6 public tasks) | (baseline) | mean correlation +3.4% (bf16 better), mean_nbr +9.6% (within diffusion sampling noise variance), action MAE 0.015 (1.5% of action range) |
 
-The quantization script lives at `icra_2026_ramen/eval/offline_evaluation/convert_ckpt_to_bf16.py`. The bf16 ckpt is also published to HF Hub as `pi05-round5-run72-pf-noeval-32d-bf16`.
+The bf16 quantization keeps the LeRobot-official 5 patterns (`vision_tower`, `multi_modal_projector`, `input_layernorm`, `post_attention_layernorm`, `model.norm`) plus action heads (`action_in_proj`, `action_out_proj`, `time_mlp_in`, `time_mlp_out`, `state_proj`) in fp32. This avoids the dtype mismatch that occurs when `noisy_actions (fp32)` × `action_in_proj (bf16)` is multiplied in the diffusion denoising loop.
+
+The quantization script lives at `icra_2026_ramen/eval/offline_evaluation/convert_ckpt_to_bf16.py`. The bf16 ckpt is also published to HF Hub as `pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16`.
 
 ## Smoke Test
 
@@ -273,7 +278,8 @@ print(f'NaN: {np.isnan(actions).any()} / Inf: {np.isinf(actions).any()}')  # exp
 | `RuntimeError: tensor a (8) ... b (32)` | state pad logic missing (older server code) | Confirm you are on `feat/lerobot-pi05-r5` branch (`git log -1`) |
 | `Warning: Could not load state dict` | lerobot pin pre-PR #9 | Verify `uv.lock` has `lerobot @ ramen 7431fb1d` or later |
 | First inference takes 300+ sec | `compile_model: True` not stripped | Check entrypoint.sh auto-fix log lines |
-| `RuntimeError: CUDA out of memory` | bf16 not effective (`config.dtype="float32"`) | `cat checkpoints/r5/config.json \| grep dtype` should show `"bfloat16"`. If fp32, re-download from HF Hub `pi05-round5-run72-pf-noeval-32d-bf16` |
+| `RuntimeError: CUDA out of memory` | bf16 not effective (`config.dtype="float32"`) | `cat checkpoints/r5/config.json \| grep dtype` should show `"bfloat16"`. If fp32, re-download from HF Hub `pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16` |
+| `RuntimeError: mat1 and mat2 must have the same dtype, but got Float and BFloat16` | Using a ckpt where action heads were also bf16-converted | Re-download `pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16` (action heads / vision_tower / etc. are kept in fp32) |
 | Real-robot gripper response slow (~3 sec lag) | Double-EMA: client EMA (α=0.2) on top of server EMA (α=0.5) | Verify launch file has `action_smoothing="none"` (fixed in PR #9) |
 
 ## References
@@ -289,3 +295,5 @@ print(f'NaN: {np.isnan(actions).any()} / Inf: {np.isinf(actions).any()}')  # exp
 - icra_2026_ramen Issue #193 / PR #194 (R5 deploy checklist)
 - **icra_2026_ramen Issue #197 / PR #198** (Run72 deploy bugs + safety guards)
 - icra_2026_ramen `eval/offline_evaluation/convert_ckpt_to_bf16.py` (bf16 quantization script)
+- **icra_2026_ramen `eval/docs/r5_final_model_selection_v3.md`** (rationale for switching from Run72 to Run73, including thorough A100 verification)
+- **airoa-evaluation-ICRA PR #14** (keep action heads in fp32 during bf16 quantization to avoid dtype mismatch)

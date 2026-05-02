@@ -4,27 +4,27 @@
 
 | 項目 | 値 |
 |------|-----|
-| モデル | π0.5 ファインチューン (Run72: `pf-noeval-32d`、 32D output、 aux-head 構造) |
-| 提出 step | s029515 (final checkpoint) |
-| **量子化** | **bf16 量子化版** (deploy 用、 VRAM 制約対応) |
+| モデル | π0.5 ファインチューン (Run73: `r71s50-pf-noeval-32d`、 32D output、 Run71 s50000 を base に再 fine-tune) |
+| 提出 step | s020000 (Run73 系で Public Task / General 評価ともに最良) |
+| **量子化** | **bf16 量子化版** (deploy 用、 LeRobot 公式 keep_fp32 + action 系 fp32 保持) |
 | ベースモデル | `ICRA-2026-RAMEN/pi05-baseline-100k-pt` (運営公開モデル) |
-| 学習データ | `ICRA-2026-RAMEN/airoa-public-filter` |
-| **チェックポイント (R2)** | `s3://airoa-icra-team-11/r5-pi05-run72-pf-noeval-32d-s029515/` (**bf16 量子化版、 8.7 GiB**) |
-| **HF Hub (deploy 用、 bf16)** | **`ICRA-2026-RAMEN/pi05-round5-run72-pf-noeval-32d-bf16`** |
-| HF Hub (学習側 fp32、 参考) | `ICRA-2026-RAMEN/pi05-round5-run72-pf-noeval-32d` @ commit `a7bbf6d4` |
+| 学習データ | `ICRA-2026-RAMEN/airoa-public-filter-noeval` |
+| **HF Hub (deploy 用、 bf16)** | **`ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16`** |
+| HF Hub (学習側 fp32、 参考) | `ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d` @ commit `c434e432` (subfolder `checkpoints/020000/pretrained_model`) |
+| (旧 R2 参照、 Run72 用) | `s3://airoa-icra-team-11/r5-pi05-run72-pf-noeval-32d-s029515/` (Run73 への移行で HF Hub を一次配布元に変更) |
 | フォークリポジトリ | `https://github.com/matsuolab-llmcompe2025-team-suzuki/airoa-evaluation-ICRA` |
 | ブランチ | `feat/lerobot-pi05-r5` |
 | バックエンド | `lerobot` (`.env` で設定済み、 手動 export 不要) |
 | モード | `e2e` (`.env` で設定済み、 HVLA 不使用、 単一モデル方針) |
 | **VRAM** | **~9.9 GB** (bf16 量子化、 A100 実測。 RTX 5070 Ti 16 GB に余裕) |
-| **SSD** | Docker ~6.84 GB + チェックポイント **~8.7 GiB** = **~14.5 GB** (30 GB 制限内) |
+| **SSD** | Docker ~6.84 GB + チェックポイント **~9.35 GB** = **~16.2 GB** (30 GB 制限内) |
 | トークナイザー | コンテナ内蔵 (`/workspace/tokenizer/paligemma-3b-pt-224`、 HF_TOKEN 不要) |
 
 ## R5 における主要な変更点 (R4 との差分)
 
 | 項目 | R4 | R5 |
 |------|-----|-----|
-| 提出モデル | run52 s040000 (8D 出力 → 11D pad、 fp32 ~8.8 GB) | **Run72 s029515 bf16** (32D 出力 → 11D 抽出、 8.7 GiB) |
+| 提出モデル | run52 s040000 (8D 出力 → 11D pad、 fp32 ~8.8 GB) | **Run73 s020000 bf16** (32D 出力 → 11D 抽出、 9.35 GB; A100 徹底検証 (`eval/docs/r5_final_model_selection_v3.md`) で Run72 s029515 から差替) |
 | 学習データ | `airoa-sft-v5` | **`airoa-public-filter`** (公開 task 特化) |
 | `transformers` | 5.3.0 (nested SigLIPVisionModel) | **5.7.0** (flat SigLIPVisionModel) |
 | `lerobot` fork | @ramen `c343490c` (vision_tower bug 含) | **@ramen `7431fb1d`** (PR #9 vision_tower fix) |
@@ -56,8 +56,8 @@
 - ホスト RAM: **12 GB 以上** (新ルート `LEROBOT_LOW_CPU_MEM=1` default で peak ~9 GB)
   - 旧ルート (`LEROBOT_LOW_CPU_MEM=0`) は CPU peak ~40 GB 必要、 24 GB 環境では OOM
 - Docker (>= 20.10) + Docker Compose v2 + NVIDIA Container Toolkit
-- AWS CLI (`pip install awscli`)
-- ホスト SSD 空き: 20 GB 以上 (Docker image ~7 GB + ckpt ~8.7 GiB + 作業領域)
+- `huggingface-cli` (`pip install huggingface_hub`)
+- ホスト SSD 空き: 20 GB 以上 (Docker image ~7 GB + ckpt ~9.35 GB + 作業領域)
 - HF_TOKEN は **不要** (PaliGemma トークナイザーはコンテナ内蔵)
 - インターネット接続: Docker build 時のみ必要、 推論時は **`--network none` で動作可能**
 
@@ -74,21 +74,24 @@ git checkout feat/lerobot-pi05-r5
 ### 2. チェックポイントのダウンロード
 
 ```bash
-export AWS_ENDPOINT_URL=https://eabeb2a5516ef53a191452e5714fc16b.r2.cloudflarestorage.com
-aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
-    s3://airoa-icra-team-11/r5-pi05-run72-pf-noeval-32d-s029515/ checkpoints/r5/
+huggingface-cli download \
+    ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16 \
+    --local-dir checkpoints/r5
 ```
+
+(参考: 旧 Run72 用の R2 fallback は使用しません。 Run73 への移行で HF Hub を一次配布元に変更済み。)
 
 期待されるファイル一覧 (bf16 量子化版):
 ```
 checkpoints/r5/
-├── config.json                                                 (2.9 KB、 dtype="bfloat16")
-├── model.safetensors                                           (~8.7 GiB、 bf16 量子化済)
-├── policy_preprocessor.json                                    (2.3 KB)
-├── policy_preprocessor_step_2_normalizer_processor.safetensors (3.8 KB)
-├── policy_postprocessor.json                                   (663 B)
-├── policy_postprocessor_step_0_unnormalizer_processor.safetensors (3.8 KB)
-└── train_config.json                                           (8.0 KB)
+├── README.md                                                   (~3 KB)
+├── config.json                                                 (~3 KB、 dtype="bfloat16")
+├── model.safetensors                                           (~9.35 GB、 bf16 量子化: action 系・vision_tower などは fp32 保持)
+├── policy_preprocessor.json                                    (~2 KB)
+├── policy_preprocessor_step_2_normalizer_processor.safetensors (~4 KB)
+├── policy_postprocessor.json                                   (~1 KB)
+├── policy_postprocessor_step_0_unnormalizer_processor.safetensors (~4 KB)
+└── train_config.json                                           (~8 KB)
 ```
 
 ### 3. コンテナの起動
@@ -171,8 +174,8 @@ R4 では `PI05Policy.from_pretrained` 内に **silent fallback** (vision_tower 
 R5 では以下で完全対策済:
 1. **lerobot fork @ramen `7431fb1d`**: silent fallback を `RuntimeError` に変換 + nested→flat 自動 remap (PR #9)
 2. **`PI05Policy.from_pretrained(strict=True)`**: `lerobot_hsr_policy.py` で明示
-3. **transformers 5.7.0**: flat SigLIPVisionModel で Run72 ckpt と 1:1 一致
-4. **bf16 量子化**: VRAM 制約 (RTX 5070 Ti 16 GB) に対応 (~16.5 GB → ~9.9 GB)
+3. **transformers 5.7.0**: flat SigLIPVisionModel で Run72/Run73 ckpt と 1:1 一致
+4. **bf16 量子化**: VRAM 制約 (RTX 5070 Ti 16 GB) に対応 (~16.5 GB → ~9.9 GB)。 LeRobot `to_bfloat16_for_selected_params` 公式 5 種 + action 系 5 種 (`action_in_proj`, `action_out_proj`, `time_mlp_in`, `time_mlp_out`, `state_proj`) を fp32 で保持し、 diffusion denoising loop の dtype mismatch を回避
 
 ### チェックポイント前処理 (entrypoint.sh による自動化)
 
@@ -182,9 +185,9 @@ R5 では以下で完全対策済:
 - DAFD フィールド除去: `use_dafd`, `dafd_gripper_*` × 6, `dafd_sign_*` × 2 (LeRobot 互換性)
 - `policy_preprocessor.json` の `tokenizer_name` をコンテナ内パスに書換 (オフライン対応)
 
-### state pad ロジック (Run72 32D state ckpt 用)
+### state pad ロジック (Run73 32D state ckpt 用)
 
-HSR client が送る state は 8D (`arm 5 + gripper 1 + head 2`) ですが、 Run72 ckpt の `policy_preprocessor.observation.state.{q01,q99,...}` は 32D で保存されています。 `server/lerobot_hsr_policy.py` の `_pad_state_8d_to_32d` で以下の layout で pad:
+HSR client が送る state は 8D (`arm 5 + gripper 1 + head 2`) ですが、 Run73 (および旧 Run72) ckpt の `policy_preprocessor.observation.state.{q01,q99,...}` は 32D で保存されています。 `server/lerobot_hsr_policy.py` の `_pad_state_8d_to_32d` で以下の layout で pad:
 
 | 8D src | 32D dst | 説明 |
 |--------|---------|------|
@@ -225,13 +228,15 @@ R5 提出 ckpt は **bf16 量子化版**。 fp32 のままだと推論時 VRAM ~
 
 | 観点 | fp32 (元、 学習側) | **bf16 (R5 提出)** |
 |---|---|---|
-| `model.safetensors` | 15.4 GiB | **8.7 GiB** |
+| `model.safetensors` | 16.57 GB | **9.35 GB** |
 | 推論時 VRAM | ~16.5 GB | **~9.9 GB** |
 | `config.json` の `dtype` | `"float32"` | `"bfloat16"` |
-| 推論レイテンシ (warm) | ~620 ms | **~370 ms** |
-| 性能差 (オフライン eval、 全 6 public task 平均) | (基準) | corr 差 -0.002、 NBR 差 -0.024 (実用範囲、 むしろ僅か改善) |
+| 推論レイテンシ (warm、 A100) | (未測定) | **~315 ms / chunk = 31.5 ms / frame** |
+| 性能差 (オフライン eval、 全 6 public task 平均) | (基準) | mean correlation +3.4% (bf16 良)、 mean_nbr +9.6% (diffusion noise variance 内)、 action MAE 0.015 (action range 1.5%) |
 
-量子化方法は `icra_2026_ramen/eval/offline_evaluation/convert_ckpt_to_bf16.py` 参照。 HF Hub にも別 repo `pi05-round5-run72-pf-noeval-32d-bf16` として公開済。
+bf16 量子化は LeRobot `to_bfloat16_for_selected_params` 公式の 5 種 (`vision_tower`, `multi_modal_projector`, `input_layernorm`, `post_attention_layernorm`, `model.norm`) + action 系 5 種 (`action_in_proj`, `action_out_proj`, `time_mlp_in`, `time_mlp_out`, `state_proj`) を fp32 で保持。 これにより diffusion denoising loop の `noisy_actions (fp32)` × `action_in_proj (bf16)` 乗算で発生する dtype mismatch エラーを回避。
+
+量子化方法は `icra_2026_ramen/eval/offline_evaluation/convert_ckpt_to_bf16.py` 参照。 HF Hub には `pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16` として公開済。
 
 ## 動作確認
 
@@ -273,7 +278,8 @@ print(f'NaN: {np.isnan(actions).any()} / Inf: {np.isinf(actions).any()}')  # Fal
 | `RuntimeError: tensor a (8) ... b (32)` | state pad ロジック未適用 (旧 server コード) | `feat/lerobot-pi05-r5` ブランチを使っているか `git log -1` で確認 |
 | `Warning: Could not load state dict` | lerobot pin が PR #9 以前 | `uv.lock` で `lerobot @ ramen 7431fb1d` 以降を確認 |
 | 初回推論が 300 秒以上 | `compile_model: True` のまま | entrypoint.sh の自動修正ログ確認 |
-| `RuntimeError: CUDA out of memory` | bf16 化が効いていない (`config.dtype="float32"` のまま) | `cat checkpoints/r5/config.json \| grep dtype` で `"bfloat16"` を確認、 fp32 なら HF Hub `pi05-round5-run72-pf-noeval-32d-bf16` から再 download |
+| `RuntimeError: CUDA out of memory` | bf16 化が効いていない (`config.dtype="float32"` のまま) | `cat checkpoints/r5/config.json \| grep dtype` で `"bfloat16"` を確認、 fp32 なら HF Hub `pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16` から再 download |
+| `RuntimeError: mat1 and mat2 must have the same dtype, but got Float and BFloat16` | action 系 weight も bf16 化された ckpt を使用している | `pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16` を再 download (action 系・vision_tower などは fp32 保持済) |
 | 実機 gripper が反応遅い (~3 秒遅延) | client 側 EMA (α=0.2) と server 側 EMA (α=0.5) の二重 EMA | launch ファイルの `action_smoothing="none"` を確認 (PR #9 で修正済) |
 
 ## 関連リソース
@@ -289,3 +295,5 @@ print(f'NaN: {np.isnan(actions).any()} / Inf: {np.isinf(actions).any()}')  # Fal
 - icra_2026_ramen Issue #193 / PR #194 (R5 デプロイチェックリスト)
 - **icra_2026_ramen Issue #197 / PR #198** (Run72 deploy bugs + safety guards)
 - icra_2026_ramen `eval/offline_evaluation/convert_ckpt_to_bf16.py` (bf16 量子化スクリプト)
+- **icra_2026_ramen `eval/docs/r5_final_model_selection_v3.md`** (Run72 → Run73 ckpt 差替の根拠レポート、 A100 徹底検証込み)
+- **airoa-evaluation-ICRA PR #14** (bf16 量子化時に action 系を fp32 保持する dtype mismatch 対策)
