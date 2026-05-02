@@ -20,7 +20,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from PIL import Image
 from policy_client.base_policy import BasePolicy
 
 logger = logging.getLogger(__name__)
@@ -214,7 +213,6 @@ def _reinit_meta_buffers(model, device: str) -> None:
                 b.shape, device=device, dtype=b.dtype,
             ), persistent=False)
 
-_IMAGE_SIZE = (224, 224)
 _HSR_ACTION_DIM = 11  # 8 joints + 3 base twist
 _HSR_STATE_DIM = 8  # arm(5) + gripper(1) + head(2)
 
@@ -444,16 +442,25 @@ class LeRobotHSRPolicy(BasePolicy):
         self._policy.reset()
 
     def _prepare_image(self, img: np.ndarray) -> torch.Tensor:
-        """Convert raw image to [3, 224, 224] float tensor."""
+        """Convert raw HSR camera image to [3, H, W] float tensor in [0,1].
+
+        IMPORTANT: do NOT pre-resize on the server side. LeRobot PI05Policy
+        internally calls resize_with_pad_torch (bilinear + aspect-preserving
+        black-bar padding) inside _preprocess_images whenever the input
+        shape differs from config.image_resolution. That matches the resize
+        used during training. Pre-resizing here with PIL.BICUBIC stretch
+        (which destroys aspect ratio) bypasses LeRobot's resize and feeds an
+        out-of-distribution image into SigLIP, degrading mean correlation by
+        ~0.058 on Public Task eval (verified on RTX 5070 Ti, Run73 s20000 bf16).
+        """
         img = np.asarray(img)
         if img.ndim == 3 and img.shape[0] == 3:
+            # convert [C, H, W] -> [H, W, C] for downstream uniformity
             img = np.transpose(img, (1, 2, 0))
         if np.issubdtype(img.dtype, np.floating):
             img = (img * 255).clip(0, 255).astype(np.uint8)
-        img = Image.fromarray(img)
-        img = img.resize(_IMAGE_SIZE, Image.Resampling.BICUBIC)
-        img = np.array(img, dtype=np.float32) / 255.0
-        img = np.transpose(img, (2, 0, 1))
+        img = img.astype(np.float32) / 255.0
+        img = np.transpose(img, (2, 0, 1))  # [H, W, C] -> [C, H, W]
         return torch.from_numpy(img).to(self._device)
 
     @property
