@@ -108,7 +108,8 @@ def _load_pi05_low_cpu_mem(checkpoint_dir: str, device: str, strict: bool = True
     if not missing and not unexpected:
         logger.info("All keys loaded successfully (low_cpu_mem)!")
 
-    # meta tensor が残っている場合の置換 (R3 MoE 実装と同等)
+    # meta param が残っている場合の置換 (PI05 では通常起きない、 安全網)
+    n_meta_params = 0
     for name, param in list(model.named_parameters()):
         if param.device.type == "meta":
             parts = name.split(".")
@@ -118,17 +119,100 @@ def _load_pi05_low_cpu_mem(checkpoint_dir: str, device: str, strict: bool = True
             setattr(mod, parts[-1], torch.nn.Parameter(
                 torch.zeros(param.shape, device=device, dtype=param.dtype)
             ))
-    for name, buf in list(model.named_buffers()):
-        if buf.device.type == "meta":
-            parts = name.split(".")
+            n_meta_params += 1
+    if n_meta_params > 0:
+        logger.warning("Replaced %d meta params with zeros (potential ckpt mismatch)", n_meta_params)
+
+    # ckpt にない meta buffer を **正しく再計算** する (icra_2026_ramen Issue #201)。
+    # 旧実装は torch.zeros で置換していたが、 これだと rotary_emb.inv_freq が zero になり
+    # positional encoding (RoPE) が壊れて推論結果が壊滅的に劣化する (5/2 鈴木さん指摘、
+    # ローカル A100 で旧ルート vs 新ルートで abs mean 0.037 vs 0.063 の不一致を確認)。
+    _reinit_meta_buffers(model, device)
+
+    return model
+
+
+def _reinit_meta_buffers(model, device: str) -> None:
+    """ckpt に含まれない meta buffer を正しい初期値で再構築する。
+
+    LeRobot PI05 (PaliGemma + Gemma expert) で ckpt に含まれない buffer (`persistent=False`):
+      1. vision_tower.embeddings.position_ids: arange(num_patches) (1, 256) int64
+      2. language_model.embed_tokens.embed_scale: sqrt(hidden_size)
+      3. language_model.rotary_emb.inv_freq + original_inv_freq: GemmaRotaryEmbedding 計算
+      4. gemma_expert.rotary_emb.inv_freq + original_inv_freq: 同上 (expert 用)
+
+    rotary_emb は同 class (`GemmaRotaryEmbedding`) の reference instance を CPU で作成し、
+    inv_freq を計算済の状態で取得 → buffer をコピーする。
+    """
+    import math
+
+    pwe = model.model.paligemma_with_expert
+    pg = pwe.paligemma.model
+    ge = pwe.gemma_expert.model
+
+    text_config = pwe.paligemma.config.text_config
+    expert_config = pwe.gemma_expert.config
+
+    # 1. vision_tower position_ids (SigLIP 由来、 register_buffer(persistent=False))
+    ve = pg.vision_tower.embeddings
+    if hasattr(ve, "position_ids") and ve.position_ids.device.type == "meta":
+        n_pos = ve.position_ids.shape[1]
+        pos_ids = torch.arange(n_pos, dtype=torch.int64, device=device).expand((1, -1))
+        ve.register_buffer("position_ids", pos_ids, persistent=False)
+        logger.info("Reinit meta buffer: vision_tower.embeddings.position_ids (arange %d)", n_pos)
+
+    # 2. embed_scale (Gemma の embed_tokens は GemmaTextScaledWordEmbedding)
+    et = pg.language_model.embed_tokens
+    if hasattr(et, "embed_scale") and et.embed_scale.device.type == "meta":
+        scale = torch.tensor(
+            text_config.hidden_size ** 0.5,
+            dtype=et.embed_scale.dtype,
+            device=device,
+        )
+        et.register_buffer("embed_scale", scale, persistent=False)
+        logger.info("Reinit meta buffer: embed_tokens.embed_scale = sqrt(%d) = %.4f",
+                    text_config.hidden_size, math.sqrt(text_config.hidden_size))
+
+    # 3 & 4. rotary_emb.inv_freq (+ original_inv_freq) を GemmaRotaryEmbedding 同 class で再計算
+    from transformers.models.gemma.modeling_gemma import GemmaRotaryEmbedding
+
+    for tag, rotary_emb, cfg in [
+        ("language_model", pg.language_model.rotary_emb, text_config),
+        ("gemma_expert", ge.rotary_emb, expert_config),
+    ]:
+        if rotary_emb.inv_freq.device.type != "meta":
+            continue
+        # CPU で reference instance を作成 (軽量、 inv_freq 計算のみ走る)
+        ref = GemmaRotaryEmbedding(config=cfg, device=torch.device("cpu"))
+        for buf_name in ("inv_freq", "original_inv_freq"):
+            if not hasattr(rotary_emb, buf_name):
+                continue
+            cur = getattr(rotary_emb, buf_name)
+            if cur.device.type != "meta":
+                continue
+            ref_buf = getattr(ref, buf_name)
+            rotary_emb.register_buffer(
+                buf_name,
+                ref_buf.to(device=device, dtype=cur.dtype).clone(),
+                persistent=False,
+            )
+            logger.info("Reinit meta buffer: %s.rotary_emb.%s (shape=%s)",
+                        tag, buf_name, tuple(cur.shape))
+        del ref
+
+    # 残った meta buffer (想定外) を warn + zero fallback
+    remaining = [(n, b) for n, b in model.named_buffers() if b.device.type == "meta"]
+    if remaining:
+        logger.warning("Remaining meta buffers (unhandled): %d", len(remaining))
+        for n, b in remaining[:5]:
+            logger.warning("  - %s: shape=%s, dtype=%s", n, tuple(b.shape), b.dtype)
+            parts = n.split(".")
             mod = model
             for p in parts[:-1]:
                 mod = getattr(mod, p)
             mod.register_buffer(parts[-1], torch.zeros(
-                buf.shape, device=device, dtype=buf.dtype,
-            ))
-
-    return model
+                b.shape, device=device, dtype=b.dtype,
+            ), persistent=False)
 
 _IMAGE_SIZE = (224, 224)
 _HSR_ACTION_DIM = 11  # 8 joints + 3 base twist
