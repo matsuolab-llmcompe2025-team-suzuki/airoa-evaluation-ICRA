@@ -5,12 +5,12 @@
 | Field | Value |
 |------|-----|
 | Model | π0.5 fine-tuned (Run73: `r71s50-pf-noeval-32d` (Run71 s50000 から継続学習), 32D output, no aux-head) |
-| Submission step | s020000 (final checkpoint) |
+| Submission step | s20000 (final checkpoint) |
 | **Quantization** | **bf16 quantized** (deploy-only, VRAM-constrained) |
 | Base model | `ICRA-2026-RAMEN/pi05-baseline-100k-pt` (organizer-published) |
 | Training data | `ICRA-2026-RAMEN/airoa-public-filter` |
-| **Checkpoint (R2)** | `s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s020000/` (**bf16 quantized, 8.7 GiB**) |
-| **HF Hub (deploy, bf16)** | **`ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-bf16`** |
+| **Checkpoint (R2)** | `s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s20000/` (**bf16 quantized, 8.7 GiB**) |
+| **HF Hub (deploy, bf16)** | **`ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16`** |
 | HF Hub (training fp32, ref) | `ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d` |
 | Fork repository | `https://github.com/matsuolab-llmcompe2025-team-suzuki/airoa-evaluation-ICRA` |
 | Branch | `feat/lerobot-pi05-r5-run73` |
@@ -24,7 +24,7 @@
 
 | Item | R4 | R5 |
 |------|-----|-----|
-| Submitted model | run52 s040000 (8D output → 11D pad, fp32 ~8.8 GB) | **Run73 s020000 bf16** (32D output → 11D extract, 8.7 GiB) |
+| Submitted model | run52 s040000 (8D output → 11D pad, fp32 ~8.8 GB) | **Run73 s20000 bf16** (32D output → 11D extract, 8.7 GiB) |
 | Training data | `airoa-sft-v5` | **`airoa-public-filter`** (public-task-focused) |
 | `transformers` | 5.3.0 (nested SigLIPVisionModel) | **5.7.0** (flat SigLIPVisionModel) |
 | `lerobot` fork | @ramen `c343490c` (vision_tower bug) | **@ramen `7431fb1d`** (PR #9 vision_tower fix) |
@@ -76,7 +76,7 @@ git checkout feat/lerobot-pi05-r5-run73
 ```bash
 export AWS_ENDPOINT_URL=https://eabeb2a5516ef53a191452e5714fc16b.r2.cloudflarestorage.com
 aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
-    s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s020000/ checkpoints/r5/
+    s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s20000/ checkpoints/r5/
 ```
 
 Expected file listing (bf16 quantized):
@@ -231,7 +231,7 @@ The R5 submission ckpt is **bf16 quantized**. fp32 inference requires ~16.5 GB V
 | Inference latency (warm) | ~620 ms | **~370 ms** |
 | Performance gap (offline eval, mean over 6 public tasks) | (baseline) | corr Δ -0.002, NBR Δ -0.024 (within tolerance; in fact slightly better) |
 
-The quantization script lives at `icra_2026_ramen/eval/offline_evaluation/convert_ckpt_to_bf16.py`. The bf16 ckpt is also published to HF Hub as `pi05-round5-run73-r71s50-pf-noeval-32d-bf16`.
+The quantization script lives at `icra_2026_ramen/eval/offline_evaluation/convert_ckpt_to_bf16.py`. The bf16 ckpt is also published to HF Hub as `pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16`.
 
 ## Smoke Test
 
@@ -273,7 +273,7 @@ print(f'NaN: {np.isnan(actions).any()} / Inf: {np.isinf(actions).any()}')  # exp
 | `RuntimeError: tensor a (8) ... b (32)` | state pad logic missing (older server code) | Confirm you are on `feat/lerobot-pi05-r5-run73` branch (`git log -1`) |
 | `Warning: Could not load state dict` | lerobot pin pre-PR #9 | Verify `uv.lock` has `lerobot @ ramen 7431fb1d` or later |
 | First inference takes 300+ sec | `compile_model: True` not stripped | Check entrypoint.sh auto-fix log lines |
-| `RuntimeError: CUDA out of memory` | bf16 not effective (`config.dtype="float32"`) | `cat checkpoints/r5/config.json \| grep dtype` should show `"bfloat16"`. If fp32, re-download from HF Hub `pi05-round5-run73-r71s50-pf-noeval-32d-bf16` |
+| `RuntimeError: CUDA out of memory` | bf16 not effective (`config.dtype="float32"`) | `cat checkpoints/r5/config.json \| grep dtype` should show `"bfloat16"`. If fp32, re-download from HF Hub `pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16` |
 | Real-robot gripper response slow (~3 sec lag) | Double-EMA: client EMA (α=0.2) on top of server EMA (α=0.5) | Verify launch file has `action_smoothing="none"` (fixed in PR #9) |
 
 ## References

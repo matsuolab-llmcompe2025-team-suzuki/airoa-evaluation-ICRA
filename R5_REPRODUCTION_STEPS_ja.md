@@ -5,12 +5,12 @@
 | 項目 | 値 |
 |------|-----|
 | モデル | π0.5 ファインチューン (Run73: `r71s50-pf-noeval-32d` (Run71 s50000 から継続学習)、 32D output、 aux-head 不使用) |
-| 提出 step | s020000 (final checkpoint) |
+| 提出 step | s20000 (final checkpoint) |
 | **量子化** | **bf16 量子化版** (deploy 用、 VRAM 制約対応) |
 | ベースモデル | `ICRA-2026-RAMEN/pi05-baseline-100k-pt` (運営公開モデル) |
 | 学習データ | `ICRA-2026-RAMEN/airoa-public-filter` |
-| **チェックポイント (R2)** | `s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s020000/` (**bf16 量子化版、 8.7 GiB**) |
-| **HF Hub (deploy 用、 bf16)** | **`ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-bf16`** |
+| **チェックポイント (R2)** | `s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s20000/` (**bf16 量子化版、 8.7 GiB**) |
+| **HF Hub (deploy 用、 bf16)** | **`ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16`** |
 | HF Hub (学習側 fp32、 参考) | `ICRA-2026-RAMEN/pi05-round5-run73-r71s50-pf-noeval-32d` |
 | フォークリポジトリ | `https://github.com/matsuolab-llmcompe2025-team-suzuki/airoa-evaluation-ICRA` |
 | ブランチ | `feat/lerobot-pi05-r5-run73` |
@@ -24,7 +24,7 @@
 
 | 項目 | R4 | R5 |
 |------|-----|-----|
-| 提出モデル | run52 s040000 (8D 出力 → 11D pad、 fp32 ~8.8 GB) | **Run73 s020000 bf16** (32D 出力 → 11D 抽出、 8.7 GiB) |
+| 提出モデル | run52 s040000 (8D 出力 → 11D pad、 fp32 ~8.8 GB) | **Run73 s20000 bf16** (32D 出力 → 11D 抽出、 8.7 GiB) |
 | 学習データ | `airoa-sft-v5` | **`airoa-public-filter`** (公開 task 特化) |
 | `transformers` | 5.3.0 (nested SigLIPVisionModel) | **5.7.0** (flat SigLIPVisionModel) |
 | `lerobot` fork | @ramen `c343490c` (vision_tower bug 含) | **@ramen `7431fb1d`** (PR #9 vision_tower fix) |
@@ -76,7 +76,7 @@ git checkout feat/lerobot-pi05-r5-run73
 ```bash
 export AWS_ENDPOINT_URL=https://eabeb2a5516ef53a191452e5714fc16b.r2.cloudflarestorage.com
 aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
-    s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s020000/ checkpoints/r5/
+    s3://airoa-icra-team-11/r5-pi05-run73-r71s50-pf-noeval-32d-s20000/ checkpoints/r5/
 ```
 
 期待されるファイル一覧 (bf16 量子化版):
@@ -231,7 +231,7 @@ R5 提出 ckpt は **bf16 量子化版**。 fp32 のままだと推論時 VRAM ~
 | 推論レイテンシ (warm) | ~620 ms | **~370 ms** |
 | 性能差 (オフライン eval、 全 6 public task 平均) | (基準) | corr 差 -0.002、 NBR 差 -0.024 (実用範囲、 むしろ僅か改善) |
 
-量子化方法は `icra_2026_ramen/eval/offline_evaluation/convert_ckpt_to_bf16.py` 参照。 HF Hub にも別 repo `pi05-round5-run73-r71s50-pf-noeval-32d-bf16` として公開済。
+量子化方法は `icra_2026_ramen/eval/offline_evaluation/convert_ckpt_to_bf16.py` 参照。 HF Hub にも別 repo `pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16` として公開済。
 
 ## 動作確認
 
@@ -273,7 +273,7 @@ print(f'NaN: {np.isnan(actions).any()} / Inf: {np.isinf(actions).any()}')  # Fal
 | `RuntimeError: tensor a (8) ... b (32)` | state pad ロジック未適用 (旧 server コード) | `feat/lerobot-pi05-r5-run73` ブランチを使っているか `git log -1` で確認 |
 | `Warning: Could not load state dict` | lerobot pin が PR #9 以前 | `uv.lock` で `lerobot @ ramen 7431fb1d` 以降を確認 |
 | 初回推論が 300 秒以上 | `compile_model: True` のまま | entrypoint.sh の自動修正ログ確認 |
-| `RuntimeError: CUDA out of memory` | bf16 化が効いていない (`config.dtype="float32"` のまま) | `cat checkpoints/r5/config.json \| grep dtype` で `"bfloat16"` を確認、 fp32 なら HF Hub `pi05-round5-run73-r71s50-pf-noeval-32d-bf16` から再 download |
+| `RuntimeError: CUDA out of memory` | bf16 化が効いていない (`config.dtype="float32"` のまま) | `cat checkpoints/r5/config.json \| grep dtype` で `"bfloat16"` を確認、 fp32 なら HF Hub `pi05-round5-run73-r71s50-pf-noeval-32d-s20000-bf16` から再 download |
 | 実機 gripper が反応遅い (~3 秒遅延) | client 側 EMA (α=0.2) と server 側 EMA (α=0.5) の二重 EMA | launch ファイルの `action_smoothing="none"` を確認 (PR #9 で修正済) |
 
 ## 関連リソース
